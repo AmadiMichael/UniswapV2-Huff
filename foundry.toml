@@ -2,5 +2,18 @@
 src = 'src'
 out = 'out'
 libs = ['lib']
+ffi = true
 
+
+fs_permissions = [
+    { access = "read", path = "src/huffmate/tokens/ERC20.huff" },
+    { access = "read", path = "src/UniswapV2Pair.huff" },
+    { access = "read", path = "test/mocks/ERC20MintableWrappers.huff" },
+]
+
+remappings = [
+    "forge-std/=lib/forge-std/src/",
+    "foundry-huff/=lib/foundry-huff/src/",
+    "huffmate/=lib/huffmate/src/"
+]
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config

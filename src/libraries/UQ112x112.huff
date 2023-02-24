@@ -1,0 +1,29 @@
+#define function encode(uint112) pure returns (uint224)
+#define function uqdiv(uint224, uint112) pure returns (uint224)
+
+#define macro ENCODE() = takes(1) returns(1) {
+    // expects stack [uint112-x]
+    0xffffffffffffffffffffffffffff dup2 gt not_uint112 jumpi
+    0x10000000000000000000000000000 mul         // [uint224-x]
+    ENCODE_continue jump
+
+    not_uint112:
+        0x00 0x00 revert
+
+    ENCODE_continue:
+
+}
+
+#define macro UQDIV() = takes(2) returns(1) {
+    // expects stack [uint224-x, uint112-y]
+
+    0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff dup2 gt not_uintExpected jumpi
+    0xffffffffffffffffffffffffffff dup3 gt not_uintExpected jumpi
+    
+    div UQDIV_continue jump                       // [result(uint224)]
+
+    not_uintExpected:
+        0x00 0x00 revert
+
+    UQDIV_continue:
+}
