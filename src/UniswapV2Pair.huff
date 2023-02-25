@@ -1,4 +1,10 @@
-// #include "huffmate/tokens/ERC20.huff"
+/// @title UniswapV2Pair
+/// @notice SPDX-License-Identifier: MIT
+/// @author AmadiMichael <https://github.com/AmadiMichael>
+/// @notice 
+/// @notice Adapted from UniswapV2 (https://github.com/)
+
+
 // #include "huffmate/utils/ReentrancyGuard.huff"
 #include "huffmate/utils/SafeTransferLib.huff"
 #include "huffmate/utils/Calls.huff"
@@ -47,6 +53,8 @@
 
 #define error INSUFFICIENT_LIQUIDITY_MINTED()
 #define error OVERFLOW()
+#define error INSUFFICIENT_LIQUIDITY_BURNED()
+
 
 #define event Mint(address indexed sender, uint amount0, uint amount1)
 #define event Burn(address indexed sender, uint amount0, uint amount1, address indexed to)
@@ -60,6 +68,8 @@
     )
 #define event Sync(uint112 reserve0, uint112 reserve1)
 #define event Console(uint256[] log)
+#define event Console2(bytes32[] log)
+
 
 
 // functions
@@ -69,7 +79,59 @@
 }
 
 #define macro BURN() = takes (0) returns (0) {
-  // To Be Done
+    GET_BALANCE_OF()                            // [token0Balance, token1Balance]
+    _GET_RESERVES()                             // [reserve0, reserve1, token0Balance, token1Balance]
+    address 0x00 mstore                         // [reserve0, reserve1, token0Balance, token1Balance]
+
+    address                                     // [account, reserve0, reserve1, token0Balance, token1Balance]
+    [BALANCE_SLOT] LOAD_ELEMENT_FROM_KEYS(0x00) // [liquidity, reserve0, reserve1, token0Balance, token1Balance]
+
+    dup3 dup3 MINT_FEE()                        // [feeOn, liquidity, reserve0, reserve1, token0Balance, token1Balance]
+    [TOTAL_SUPPLY_SLOT] sload                   // [totalSupply, feeOn, liquidity, reserve0, reserve1, token0Balance, token1Balance]
+
+    swap6 swap1 swap5                           // [token0Balance, token1Balance, liquidity, reserve0, reserve1, feeOn, totalSupply]
+    dup7 swap1 dup4                             // [liquidity, token0balance, totalSupply, token1Balance, liquidity, reserve0, reserve1, feeOn, totalSupply]
+
+    SAFE_MUL() SAFE_DIV()                       // [amount0, token1Balance, liquidity, reserve0, reserve1, feeOn, totalSupply]
+    swap6 swap1 dup3                            // [liquidity, token1Balance, totalSupply, liquidity, reserve0, reserve1, feeOn, amount0]
+    SAFE_MUL() SAFE_DIV()                       // [amount1, liquidity, reserve0, reserve1, feeOn, amount0]
+
+    dup1 iszero revert_insufficient_lp_burn jumpi
+    dup6 iszero revert_insufficient_lp_burn jumpi
+
+    swap1 address swap1 _BURN()                 // [amount1 resevre0 reserve1, feeOn, amount0]
+    [_TOKEN0] sload dup6 0x04 calldataload      // [to, amount, token0, amount1 resevre0 reserve1, feeOn, amount0]
+    SAFE_TRANSFER(0x00)                         // [amount1 resevre0 reserve1, feeOn, amount0]
+    [_TOKEN1] sload dup2 0x04 calldataload      // [to, amount, token1, amount1 resevre0 reserve1, feeOn, amount0]
+    SAFE_TRANSFER(0x00)                         // [amount1 resevre0 reserve1, feeOn, amount0]
+
+    GET_BALANCE_OF()                            // [token0Balance, token1Balance, amount1 resevre0 reserve1, feeOn, amount0]
+
+    dup4 dup6                                   // [reserve1, resevre0, token0Balance, token1Balance, amount1 resevre0 reserve1, feeOn, amount0]
+    swap3 swap1                                 // [resevre0, token1Balance, token0Balance, reserve1, amount1 resevre0 reserve1, feeOn, amount0]
+    swap2                                       // [token0Balance, token1Balance, reserve0, reserve1, amount1 resevre0 reserve1, feeOn, amount0]
+    UPDATE()                                    // [amount1 resevre0 reserve1, feeOn, amount0]
+
+    swap3 iszero BURN_emitevent jumpi           // [resevre0 reserve1, amount1, amount0]
+    _GET_RESERVES() SAFE_MUL() [_K_LAST] sstore // [resevre0 reserve1, amount1, amount0]
+    BURN_emitevent jump
+
+    revert_insufficient_lp_burn:
+      __ERROR(INSUFFICIENT_LIQUIDITY_BURNED) 0x00 mstore
+      0x04 0x00 revert
+
+    
+    BURN_emitevent:                             // [resevre0 reserve1, amount1, amount0]
+        dup4 0x00 mstore                       // [resevre0 reserve1, amount1, amount0]
+        dup3 0x20 mstore                       // [resevre0 reserve1, amount1, amount0]
+        0x04 calldataload                       // [to, resevre0 reserve1, amount1, amount0]
+        caller                                  // [sender, to, resevre0 reserve1, amount1, amount0]
+        __EVENT_HASH(Burn)                      // [eventsig, sender, to, resevre0 reserve1, amount1, amount0]
+        0x40 0x00 log3                          // [resevre0 reserve1, amount1, amount0]
+        
+        swap3 0x00 mstore                       // [ reserve1, amount1, resevre0]
+        swap1 0x20 mstore                        // [reserve1, resevre0]
+        0x40 0x00 return
 }
 
 #define macro FACTORY() = takes (0) returns (0) {
@@ -110,139 +172,41 @@
 
     // mint fee
     dup4 dup4 MINT_FEE()                        // [feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-      // 0x04 0x80 mstore
-      // dup1 0xa0 mstore
-      // dup2 0xc0 mstore
-      // dup3 0xe0 mstore
-      // dup4 0x100 mstore
-      // __EVENT_HASH(Console) 0x80 0xa0
-      // log1
+     
 
-// dup3 0xa0 mstore
-// dup3 0xc0 mstore
-
-//       __EVENT_HASH(Console) 0x40 0xa0
-//       log1
-
-
-    [TOTAL_SUPPLY_SLOT] sload                   // [totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+    [TOTAL_SUPPLY_SLOT] sload                       // [totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
 
     dup1 iszero iszero nonZeroTotalSupply jumpi  // [totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
     [_MINIMUM_LIQUIDITY]                          // [MINIMUM_LIQUIDITY, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-
-    //  dup5 0xa0 mstore
-    //   dup4 0xc0 mstore
-
-    //   __EVENT_HASH(Console) 0x40 0xa0
-    //   log1
-
-
-    
-    dup5 dup5 SAFE_MUL()    // [amountsMul, MINIMUM_LIQUIDITY, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-
-
-// dup1 0xa0 mstore
-
-//       __EVENT_HASH(Console) 0x20 0xa0
-//       log1
-
-
+    dup5 dup5 SAFE_MUL()                          // [amountsMul, MINIMUM_LIQUIDITY, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
     SQRT() SAFE_SUB()                            // [liquidity, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-
-      // 0x04 0x80 mstore    
-      // dup1 0xa0 mstore
-      // dup2 0xc0 mstore
-      // dup3 0xe0 mstore
-      // dup4 0x100 mstore
-      //  __EVENT_HASH(Console) 0x80 0xa0
-      // log1
-
     0x00 [_MINIMUM_LIQUIDITY] _MINT()            // [liquidity, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
     swap1 pop                                    // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-      // 0x04 0x80 mstore
-      // dup1 0xa0 mstore
-      // dup2 0xc0 mstore
-      // dup3 0xe0 mstore
-      // dup4 0x100 mstore
-      // __EVENT_HASH(Console) 0x80 0xa0
-      // log1
+    continue jump                                 // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
 
-    continue jump                     // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+    nonZeroTotalSupply:                                     // [totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+      dup1 dup4 SAFE_MUL() dup7 swap1 SAFE_DIV()            // [num2, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+      swap1 dup5 SAFE_MUL() dup7 swap1 SAFE_DIV()           // [num1, num2, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+      MIN()                                                 // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
 
-    nonZeroTotalSupply:                         // [totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-      dup1 dup4 SAFE_MUL() dup7 swap1 div       // [num2, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-      swap1 dup5 SAFE_MUL() dup7 swap1 div      // [num1, num2, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-      MIN()                                     // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-
-    continue:                                   // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-      // 0x04 0x80 mstore
-      // dup1 0xa0 mstore
-      // dup2 0xc0 mstore
-      // dup3 0xe0 mstore
-      // dup4 0x100 mstore
-      // __EVENT_HASH(Console) 0x80 0xa0
-      // log1
-
-      dup1 iszero revertInsufficientLiquidityMinted jumpi  // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-
-      // 0x04 0x80 mstore
-      // dup1 0xa0 mstore
-      // dup2 0xc0 mstore
-      // dup3 0xe0 mstore
-      // dup4 0x100 mstore
-      // __EVENT_HASH(Console) 0x80 0xa0
-      // log1
-
-      0x04 calldataload swap1 _MINT()            // [feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-
-      // 0x04 0x80 mstore
-      // dup1 0xa0 mstore
-      // dup2 0xc0 mstore
-      // dup3 0xe0 mstore
-      // dup4 0x100 mstore
-      // __EVENT_HASH(Console) 0x80 0xa0
-      // log1
-      finish jump                               // [feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+    continue:                                                 // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+      dup1 iszero revertInsufficientLiquidityMinted jumpi     // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+      0x04 calldataload dup2 _MINT()                          // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+      finish jump
 
     revertInsufficientLiquidityMinted:
       __ERROR(INSUFFICIENT_LIQUIDITY_MINTED) 0x00 mstore
       0x04 0x00 revert
 
-    finish:                                     // [feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-      // 0x04 0x80 mstore
-      // dup1 0xa0 mstore
-      // dup2 0xc0 mstore
-      // dup3 0xe0 mstore
-      // dup4 0x100 mstore
-      // __EVENT_HASH(Console) 0x80 0xa0
-      // log1
+    finish:                                       // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+      dup6 dup6 dup10 dup10 UPDATE()              // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+      swap1 iszero emitEvent jumpi
+      _GET_RESERVES() SAFE_MUL() [_K_LAST] sstore // [liquidity, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
 
-      dup5 dup5 dup9 dup9 UPDATE()              // [feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-      
-      // 0x04 0x80 mstore
-      // dup1 0xa0 mstore
-      // dup2 0xc0 mstore
-      // dup3 0xe0 mstore
-      // dup4 0x100 mstore
-      // __EVENT_HASH(Console) 0x80 0xa0
-      // log1
-      iszero emitEvent jumpi
-      _GET_RESERVES() SAFE_MUL() [_K_LAST] sstore // [amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-
-    
-    emitEvent:                                  // [amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-
-      // 0x04 0x80 mstore
-      // dup1 0xa0 mstore
-      // dup2 0xc0 mstore
-      // dup3 0xe0 mstore
-      // dup4 0x100 mstore
-      // __EVENT_HASH(Console) 0x80 0xa0
-      // log1
-
-      0x20 mstore 0x00 mstore                   // [reserve0, reserve1, token0Balance, token1Balance]
+    emitEvent:                                        // [liquidity, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+      swap2 0x00 mstore 0x20 mstore                   // [liquidity, reserve0, reserve1, token0Balance, token1Balance]
       caller __EVENT_HASH(Mint) 0x40 0x00 log2
-      0x01 0x00 mstore 0x20 0x00 return
+      0x00 mstore 0x20 0x00 return
 }
 
 #define macro PRICE0_CUMULATIVE_LAST() = takes (0) returns (0) {
@@ -444,12 +408,12 @@
     [_TOKEN0] sload gas staticcall
     iszero balanceOfCallFailed jumpi
     0x80 mload                                                  // [token0Balance, token1Balance]
-    continue3 jump
+    GET_BALANCE_OF_continue jump
 
     balanceOfCallFailed:
         0x00 0x00 revert
 
-    continue3:
+    GET_BALANCE_OF_continue:
 }
 
 
@@ -489,7 +453,7 @@
 
         dup1 dup3 sub [TOTAL_SUPPLY_SLOT] sload SAFE_MUL()        // [numerator, rootKLast, rootK, feeOn, feeTo]   
         swap2 0x05 SAFE_MUL() SAFE_ADD()                          // [denominator, numerator, feeOn, feeTo]
-        swap1 div dup1                                            // [liquidity, liquidity, feeOn, feeTo]
+        swap1 SAFE_DIV() dup1                                     // [liquidity, liquidity, feeOn, feeTo]
         
         iszero preContinue_kLastCompare jump
 
@@ -532,14 +496,6 @@
     [BLOCK_TIMESTAMP_LAST_OFFSET] shr               // [blocktimestamplast, blocktimestamp, balance0, balance1, reserve0, reserve1]
     dup2 sub                                        // [timeElapsed, blocktimestamp, balance0, balance1, reserve0, reserve1]
 
-    0x04 0x80 mstore
-      dup1 0xa0 mstore
-      dup2 0xc0 mstore
-      dup3 0xe0 mstore
-      dup4 0x100 mstore
-      __EVENT_HASH(Console) 0x80 0xa0
-      log1
-
 
     dup1 iszero requireJump jumpi                 // [timeElapsed, blocktimestamp, balance0, balance1, reserve0, reserve1]
     dup5 iszero requireJump jumpi                 // [timeElapsed, blocktimestamp, balance0, balance1, reserve0, reserve1]
@@ -554,87 +510,32 @@
     dup7 dup7 ENCODE()                              // [ENCODED-reserve0, reserve1, price1Cumulativelast, timeElapsed, blocktimestamp, balance0, balance1, reserve0, reserve1]
     UQDIV() swap1 swap2 mul                         // [extraPrice1CumulativeLast, price1Cumulativelast, blocktimestamp, balance0, balance1, reserve0, reserve1]
     add [_PRICE1_CUMULATIVE_LAST] sstore            // [blocktimestamp, balance0, balance1, reserve0, reserve1]
-    // 0x04 0x80 mstore
-    //   dup1 0xa0 mstore
-    //   dup2 0xc0 mstore
-    //   dup3 0xe0 mstore
-    //   dup4 0x100 mstore
-    //   __EVENT_HASH(Console) 0x80 0xa0
-    //   log1
     updateStorage jump                              // [blocktimestamp, balance0, balance1, reserve0, reserve1]
 
     requireJump:
       pop
 
     updateStorage:                                  // [blocktimestamp, balance0, balance1, reserve0, reserve1]
-      0x04 0x80 mstore
-      dup1 0xa0 mstore
-      dup2 0xc0 mstore
-      dup3 0xe0 mstore
-      dup4 0x100 mstore
-      __EVENT_HASH(Console) 0x80 0xa0
-      log1
-
-      pop swap1 [RESERVE1_OFFSET] 
-      
-              0x04 0x80 mstore
-      dup1 0xa0 mstore
-      dup2 0xc0 mstore
-      dup3 0xe0 mstore
-      dup4 0x100 mstore
-      __EVENT_HASH(Console) 0x80 0xa0
-      log1
-
-      shl or               // [balances, reserve0, reserve1]
-
-        0x04 0x80 mstore
-      dup1 0xa0 mstore
-      dup2 0xc0 mstore
-      dup3 0xe0 mstore
-      dup4 0x100 mstore
-      __EVENT_HASH(Console) 0x80 0xa0
-      log1
-
+      pop swap1 [RESERVE1_OFFSET] shl or               // [balances, reserve0, reserve1]
       timestamp [BLOCK_TIMESTAMP_LAST_OFFSET] shl   // [shiftedTimeStamp, balances, reserve0, reserve1
       or [PACKED_RESERVE_INFO] sstore              // [reserve0, reserve1]
-        0x04 0x80 mstore
-      dup1 0xa0 mstore
-      dup2 0xc0 mstore
-      dup3 0xe0 mstore
-      dup4 0x100 mstore
-      __EVENT_HASH(Console) 0x80 0xa0
-      log1
       UPDATE_continue jump
       
-
     overflow:
       __ERROR(OVERFLOW) 0x00 mstore
       0x04 0x00 revert
 
     UPDATE_continue:
-      // 0x04 0x80 mstore
-      // dup1 0xa0 mstore
-      // dup2 0xc0 mstore
-      // dup3 0xe0 mstore
-      // dup4 0x100 mstore
-      // __EVENT_HASH(Console) 0x80 0xa0
-      // log1
-
       pop pop                                     // []
-
-      // 0x04 0x80 mstore
-      // dup1 0xa0 mstore
-      // dup2 0xc0 mstore
-      // dup3 0xe0 mstore
-      // dup4 0x100 mstore
-      // __EVENT_HASH(Console) 0x80 0xa0
-      // log1
 }
 
-
-
-// 0x0000000000000000000000000000000000000000000000000000000000000001 0xa0 mstore
-//       0x4100000000000000000000000000000000000000000000000000000000000000 0xc0 mstore
-//       __EVENT_HASH(Console) 0x40 0xa0
-//       log1
-//       0x00 0x00 return
+  // 0x07 0x00 mstore
+  //     dup1 0x20 mstore
+  //     dup2 0x40 mstore
+  //     dup3 0x60 mstore
+  //     dup4 0x80 mstore
+  //      dup5 0xa0 mstore
+  //     dup6 0xc0 mstore
+  //     dup7 0xe0 mstore
+  //     __EVENT_HASH(Console2) 0x100 0x00
+  //     log1

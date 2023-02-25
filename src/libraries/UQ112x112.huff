@@ -1,3 +1,10 @@
+/// @title UQ112x112
+/// @notice SPDX-License-Identifier: MIT
+/// @author AmadiMichael <https://github.com/AmadiMichael>
+/// @notice 
+/// @notice Adapted from UniswapV2 (https://github.com/)
+
+
 #define function encode(uint112) pure returns (uint224)
 #define function uqdiv(uint224, uint112) pure returns (uint224)
 

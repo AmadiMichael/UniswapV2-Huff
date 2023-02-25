@@ -2,25 +2,22 @@
 pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
-
 import {HuffConfig} from "foundry-huff/HuffConfig.sol";
 import {HuffDeployer} from "foundry-huff/HuffDeployer.sol";
-
 import {IUniswapV2Factory} from "./interface/IUniswapV2Factory.sol";
 import {IUniswapV2Pair} from "./interface/IUniswapV2Pair.sol";
 import {IMintableERC20} from "huffmate/tokens/interfaces/IERC20.sol";
 
-// interface IMintableERC20_ is IMintableERC20 {
-//     err
-// }
-
 contract UniswapV2PairTest is Test {
+    uint224 Q112 = 2 ** 112;
     IUniswapV2Factory public factory;
     IUniswapV2Pair public pair;
     IMintableERC20 public token0;
     IMintableERC20 public token1;
+    TestUser testUser;
 
     function setUp() public {
+        testUser = new TestUser();
         string memory mock_wrapper = vm.readFile("src/UniswapV2Pair.huff");
         string memory mintable_wrapper = vm.readFile(
             "test/mocks/ERC20MintableWrappers.huff"
@@ -62,6 +59,9 @@ contract UniswapV2PairTest is Test {
         token0.mint(address(this), 10 ether);
         token1.mint(address(this), 10 ether);
 
+        token0.mint(address(testUser), 10 ether);
+        token1.mint(address(testUser), 10 ether);
+
         vm.stopPrank();
 
         // HuffConfig config = HuffDeployer.config().with_args(
@@ -90,6 +90,38 @@ contract UniswapV2PairTest is Test {
         (uint112 reserve0, uint112 reserve1, ) = pair.getReserves();
         assertEq(reserve0, expectedReserve0, "unexpected reserve0");
         assertEq(reserve1, expectedReserve1, "unexpected reserve1");
+    }
+
+    function assertCumulativePrices(
+        uint256 expectedPrice0,
+        uint256 expectedPrice1
+    ) internal {
+        assertEq(
+            pair.price0CumulativeLast(),
+            expectedPrice0,
+            "unexpected cumulative price 0"
+        );
+        assertEq(
+            pair.price1CumulativeLast(),
+            expectedPrice1,
+            "unexpected cumulative price 1"
+        );
+    }
+
+    function calculateCurrentPrice()
+        internal
+        view
+        returns (uint256 price0, uint256 price1)
+    {
+        (uint112 reserve0, uint112 reserve1, ) = pair.getReserves();
+        price0 = reserve0 > 0 ? (reserve1 * uint256(Q112)) / reserve0 : 0;
+        price1 = reserve1 > 0 ? (reserve0 * uint256(Q112)) / reserve1 : 0;
+    }
+
+    function assertBlockTimestampLast(uint32 expected) internal {
+        (, , uint32 blockTimestampLast) = pair.getReserves();
+
+        assertEq(blockTimestampLast, expected, "unexpected blockTimestampLast");
     }
 
     function encodeError(
@@ -165,7 +197,145 @@ contract UniswapV2PairTest is Test {
         pair.mint(address(this));
     }
 
+    function testBurn() public {
+        token0.transfer(address(pair), 1 ether);
+        token1.transfer(address(pair), 1 ether);
+
+        pair.mint(address(this));
+
+        uint256 liquidity = pair.balanceOf(address(this));
+        pair.transfer(address(pair), liquidity);
+
+        pair.burn(address(this));
+
+        assertEq(pair.balanceOf(address(this)), 0);
+
+        assertReserves(1000, 1000);
+
+        assertEq(pair.totalSupply(), 1000);
+
+        assertEq(token0.balanceOf(address(this)), 10 ether - 1000);
+
+        assertEq(token1.balanceOf(address(this)), 10 ether - 1000);
+    }
+
+    function testBurnUnbalanced() public {
+        token0.transfer(address(pair), 1 ether);
+        token1.transfer(address(pair), 1 ether);
+
+        pair.mint(address(this));
+
+        token0.transfer(address(pair), 2 ether);
+        token1.transfer(address(pair), 1 ether);
+
+        pair.mint(address(this)); // + 1 LP
+
+        uint256 liquidity = pair.balanceOf(address(this));
+        pair.transfer(address(pair), liquidity);
+        pair.burn(address(this));
+
+        assertEq(pair.balanceOf(address(this)), 0);
+        assertReserves(1500, 1000);
+        assertEq(pair.totalSupply(), 1000);
+        assertEq(token0.balanceOf(address(this)), 10 ether - 1500);
+        assertEq(token1.balanceOf(address(this)), 10 ether - 1000);
+    }
+
+    function testBurnUnbalancedDifferentUsers() public {
+        testUser.provideLiquidity(
+            address(pair),
+            address(token0),
+            address(token1),
+            1 ether,
+            1 ether
+        );
+
+        assertEq(pair.balanceOf(address(this)), 0);
+        assertEq(pair.balanceOf(address(testUser)), 1 ether - 1000);
+        assertEq(pair.totalSupply(), 1 ether);
+
+        token0.transfer(address(pair), 2 ether);
+        token1.transfer(address(pair), 1 ether);
+
+        pair.mint(address(this)); // + 1 LP
+
+        uint256 liquidity = pair.balanceOf(address(this));
+        pair.transfer(address(pair), liquidity);
+        pair.burn(address(this));
+
+        // this user is penalized for providing unbalanced liquidity
+        assertEq(pair.balanceOf(address(this)), 0);
+        assertReserves(1.5 ether, 1 ether);
+        assertEq(pair.totalSupply(), 1 ether);
+        assertEq(token0.balanceOf(address(this)), 10 ether - 0.5 ether);
+        assertEq(token1.balanceOf(address(this)), 10 ether);
+
+        testUser.removeLiquidity(address(pair));
+
+        // testUser receives the amount collected from this user
+        assertEq(pair.balanceOf(address(testUser)), 0);
+        assertReserves(1500, 1000);
+        assertEq(pair.totalSupply(), 1000);
+        assertEq(
+            token0.balanceOf(address(testUser)),
+            10 ether + 0.5 ether - 1500
+        );
+        assertEq(token1.balanceOf(address(testUser)), 10 ether - 1000);
+    }
+
+    function testBurnZeroTotalSupply() public {
+        // 0x12; If you divide or modulo by zero.
+        vm.expectRevert(encodeError("Panic(uint256)", 0x12));
+        pair.burn(address(this));
+    }
+
+    function testBurnZeroLiquidity() public {
+        // Transfer and mint as a normal user.
+        token0.transfer(address(pair), 1 ether);
+        token1.transfer(address(pair), 1 ether);
+        pair.mint(address(this));
+
+        vm.prank(address(0xdeadbeef));
+        vm.expectRevert(encodeError("INSUFFICIENT_LIQUIDITY_BURNED()"));
+        pair.burn(address(this));
+    }
+
+    // function testReservesPacking() public {
+    //     token0.transfer(address(pair), 1 ether);
+    //     token1.transfer(address(pair), 2 ether);
+    //     pair.mint(address(this));
+
+    //     bytes32 val = vm.load(address(pair), bytes32(uint256(10)));
+    //     assertEq(
+    //         val,
+    //         hex"000000010000000000001bc16d674ec800000000000000000de0b6b3a7640000"
+    //     );
+    // }
+
     function feeTo() external view returns (address) {
         return address(0);
+    }
+}
+
+contract TestUser {
+    function provideLiquidity(
+        address pairAddress_,
+        address token0Address_,
+        address token1Address_,
+        uint256 amount0_,
+        uint256 amount1_
+    ) public {
+        IMintableERC20(token0Address_).transfer(pairAddress_, amount0_);
+        IMintableERC20(token1Address_).transfer(pairAddress_, amount1_);
+
+        IUniswapV2Pair(pairAddress_).mint(address(this));
+    }
+
+    function removeLiquidity(address pairAddress_) public {
+        uint256 liquidity = IMintableERC20(pairAddress_).balanceOf(
+            address(this)
+        );
+        IMintableERC20(pairAddress_).transfer(pairAddress_, liquidity);
+        IUniswapV2Pair(pairAddress_).burn(address(this));
     }
 }

@@ -3,6 +3,8 @@ pragma solidity 0.8.16;
 interface IUniswapV2Pair {
     error INSUFFICIENT_LIQUIDITY_MINTED();
     error OVERFLOW();
+    error INSUFFICIENT_LIQUIDITY_BURNED();
+
     event Console(uint256[] log);
 
     event Approval(address indexed owner, address indexed spender, uint value);
