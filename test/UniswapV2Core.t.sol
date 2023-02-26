@@ -312,6 +312,246 @@ contract UniswapV2PairTest is Test {
     //     );
     // }
 
+    function testSwapBasicScenario() public {
+        token0.transfer(address(pair), 1 ether);
+        token1.transfer(address(pair), 2 ether);
+        pair.mint(address(this));
+
+        uint256 amountOut = 0.181322178776029826 ether;
+        token0.transfer(address(pair), 0.1 ether);
+        pair.swap(0, amountOut, address(this), "");
+
+        assertEq(
+            token0.balanceOf(address(this)),
+            10 ether - 1 ether - 0.1 ether,
+            "unexpected token0 balance"
+        );
+        assertEq(
+            token1.balanceOf(address(this)),
+            10 ether - 2 ether + amountOut,
+            "unexpected token1 balance"
+        );
+        assertReserves(1 ether + 0.1 ether, uint112(2 ether - amountOut));
+    }
+
+    function testSwapBasicScenarioReverseDirection() public {
+        token0.transfer(address(pair), 1 ether);
+        token1.transfer(address(pair), 2 ether);
+        pair.mint(address(this));
+
+        token1.transfer(address(pair), 0.2 ether);
+        pair.swap(0.09 ether, 0, address(this), "");
+
+        assertEq(
+            token0.balanceOf(address(this)),
+            10 ether - 1 ether + 0.09 ether,
+            "unexpected token0 balance"
+        );
+        assertEq(
+            token1.balanceOf(address(this)),
+            10 ether - 2 ether - 0.2 ether,
+            "unexpected token1 balance"
+        );
+        assertReserves(1 ether - 0.09 ether, 2 ether + 0.2 ether);
+    }
+
+    function testSwapBidirectional() public {
+        token0.transfer(address(pair), 1 ether);
+        token1.transfer(address(pair), 2 ether);
+        pair.mint(address(this));
+
+        token0.transfer(address(pair), 0.1 ether);
+        token1.transfer(address(pair), 0.2 ether);
+        pair.swap(0.09 ether, 0.18 ether, address(this), "");
+
+        assertEq(
+            token0.balanceOf(address(this)),
+            10 ether - 1 ether - 0.01 ether,
+            "unexpected token0 balance"
+        );
+        assertEq(
+            token1.balanceOf(address(this)),
+            10 ether - 2 ether - 0.02 ether,
+            "unexpected token1 balance"
+        );
+        assertReserves(1 ether + 0.01 ether, 2 ether + 0.02 ether);
+    }
+
+    function testSwapZeroOut() public {
+        token0.transfer(address(pair), 1 ether);
+        token1.transfer(address(pair), 2 ether);
+        pair.mint(address(this));
+
+        vm.expectRevert(encodeError("INSUFFICIENT_OUTPUT_AMOUNT()"));
+        pair.swap(0, 0, address(this), "");
+    }
+
+    function testSwapInsufficientLiquidity() public {
+        token0.transfer(address(pair), 1 ether);
+        token1.transfer(address(pair), 2 ether);
+        pair.mint(address(this));
+
+        vm.expectRevert(encodeError("INSUFFICIENT_LIQUIDITY()"));
+        pair.swap(0, 2.1 ether, address(this), "");
+
+        vm.expectRevert(encodeError("INSUFFICIENT_LIQUIDITY()"));
+        pair.swap(1.1 ether, 0, address(this), "");
+    }
+
+    function testSwapUnderpriced() public {
+        token0.transfer(address(pair), 1 ether);
+        token1.transfer(address(pair), 2 ether);
+        pair.mint(address(this));
+
+        token0.transfer(address(pair), 0.1 ether);
+        pair.swap(0, 0.09 ether, address(this), "");
+
+        assertEq(
+            token0.balanceOf(address(this)),
+            10 ether - 1 ether - 0.1 ether,
+            "unexpected token0 balance"
+        );
+        assertEq(
+            token1.balanceOf(address(this)),
+            10 ether - 2 ether + 0.09 ether,
+            "unexpected token1 balance"
+        );
+        assertReserves(1 ether + 0.1 ether, 2 ether - 0.09 ether);
+    }
+
+    function testSwapOverpriced() public {
+        token0.transfer(address(pair), 1 ether);
+        token1.transfer(address(pair), 2 ether);
+        pair.mint(address(this));
+
+        token0.transfer(address(pair), 0.1 ether);
+
+        vm.expectRevert(encodeError("INVALID_K()"));
+        pair.swap(0, 0.36 ether, address(this), "");
+
+        assertEq(
+            token0.balanceOf(address(this)),
+            10 ether - 1 ether - 0.1 ether,
+            "unexpected token0 balance"
+        );
+        assertEq(
+            token1.balanceOf(address(this)),
+            10 ether - 2 ether,
+            "unexpected token1 balance"
+        );
+        assertReserves(1 ether, 2 ether);
+    }
+
+    function testSwapUnpaidFee() public {
+        token0.transfer(address(pair), 1 ether);
+        token1.transfer(address(pair), 2 ether);
+        pair.mint(address(this));
+
+        token0.transfer(address(pair), 0.1 ether);
+
+        vm.expectRevert(encodeError("INVALID_K()"));
+        pair.swap(0, 0.181322178776029827 ether, address(this), "");
+    }
+
+    function testCumulativePrices() public {
+        vm.warp(0);
+        token0.transfer(address(pair), 1 ether);
+        token1.transfer(address(pair), 1 ether);
+        pair.mint(address(this));
+
+        (
+            uint256 initialPrice0,
+            uint256 initialPrice1
+        ) = calculateCurrentPrice();
+
+        // 0 seconds passed.
+        pair.sync();
+        assertCumulativePrices(0, 0);
+
+        // 1 second passed.
+        vm.warp(1);
+        pair.sync();
+        assertBlockTimestampLast(1);
+        assertCumulativePrices(initialPrice0, initialPrice1);
+
+        // 2 seconds passed.
+        vm.warp(2);
+        pair.sync();
+        assertBlockTimestampLast(2);
+        assertCumulativePrices(initialPrice0 * 2, initialPrice1 * 2);
+
+        // 3 seconds passed.
+        vm.warp(3);
+        pair.sync();
+        assertBlockTimestampLast(3);
+        assertCumulativePrices(initialPrice0 * 3, initialPrice1 * 3);
+
+        // // Price changed.
+        token0.transfer(address(pair), 2 ether);
+        token1.transfer(address(pair), 1 ether);
+        pair.mint(address(this));
+
+        (uint256 newPrice0, uint256 newPrice1) = calculateCurrentPrice();
+
+        // // 0 seconds since last reserves update.
+        assertCumulativePrices(initialPrice0 * 3, initialPrice1 * 3);
+
+        // // 1 second passed.
+        vm.warp(4);
+        pair.sync();
+        assertBlockTimestampLast(4);
+        assertCumulativePrices(
+            initialPrice0 * 3 + newPrice0,
+            initialPrice1 * 3 + newPrice1
+        );
+
+        // 2 seconds passed.
+        vm.warp(5);
+        pair.sync();
+        assertBlockTimestampLast(5);
+        assertCumulativePrices(
+            initialPrice0 * 3 + newPrice0 * 2,
+            initialPrice1 * 3 + newPrice1 * 2
+        );
+
+        // 3 seconds passed.
+        vm.warp(6);
+        pair.sync();
+        assertBlockTimestampLast(6);
+        assertCumulativePrices(
+            initialPrice0 * 3 + newPrice0 * 3,
+            initialPrice1 * 3 + newPrice1 * 3
+        );
+    }
+
+    function testFlashloan() public {
+        token0.transfer(address(pair), 1 ether);
+        token1.transfer(address(pair), 2 ether);
+        pair.mint(address(this));
+
+        uint256 flashloanAmount = 0.1 ether;
+        uint256 flashloanFee = (flashloanAmount * 1000) /
+            997 -
+            flashloanAmount +
+            1;
+
+        Flashloaner fl = new Flashloaner();
+
+        token1.transfer(address(fl), flashloanFee);
+
+        fl.flashloan(address(pair), 0, flashloanAmount, address(token1));
+
+        assertEq(token1.balanceOf(address(fl)), 0);
+        assertEq(token1.balanceOf(address(pair)), 2 ether + flashloanFee);
+    }
+
+    function uniswapV2Call(
+        address sender,
+        uint256 amount0Out,
+        uint256 amount1Out,
+        bytes calldata data
+    ) public {}
+
     function feeTo() external view returns (address) {
         return address(0);
     }
@@ -337,5 +577,46 @@ contract TestUser {
         );
         IMintableERC20(pairAddress_).transfer(pairAddress_, liquidity);
         IUniswapV2Pair(pairAddress_).burn(address(this));
+    }
+}
+
+contract Flashloaner {
+    error InsufficientFlashLoanAmount();
+
+    uint256 expectedLoanAmount;
+
+    function flashloan(
+        address pairAddress,
+        uint256 amount0Out,
+        uint256 amount1Out,
+        address tokenAddress
+    ) public {
+        if (amount0Out > 0) {
+            expectedLoanAmount = amount0Out;
+        }
+        if (amount1Out > 0) {
+            expectedLoanAmount = amount1Out;
+        }
+
+        IUniswapV2Pair(pairAddress).swap(
+            amount0Out,
+            amount1Out,
+            address(this),
+            abi.encode(tokenAddress)
+        );
+    }
+
+    function uniswapV2Call(
+        address sender,
+        uint256 amount0Out,
+        uint256 amount1Out,
+        bytes calldata data
+    ) public {
+        address tokenAddress = abi.decode(data, (address));
+        uint256 balance = IMintableERC20(tokenAddress).balanceOf(address(this));
+
+        if (balance < expectedLoanAmount) revert InsufficientFlashLoanAmount();
+
+        IMintableERC20(tokenAddress).transfer(msg.sender, balance);
     }
 }

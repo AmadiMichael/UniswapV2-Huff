@@ -4,6 +4,12 @@ interface IUniswapV2Pair {
     error INSUFFICIENT_LIQUIDITY_MINTED();
     error OVERFLOW();
     error INSUFFICIENT_LIQUIDITY_BURNED();
+    error INSUFFICIENT_OUTPUT_AMOUNT();
+    error INSUFFICIENT_LIQUIDITY();
+    error INVALID_TO();
+    error INSUFFICIENT_INPUT_AMOUNT();
+    error INVALID_K();
+    error UNISWAPV2CALL_FAILED();
 
     event Console(uint256[] log);
 
