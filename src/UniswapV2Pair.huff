@@ -280,17 +280,17 @@
       dup3 dup7 dup3 SAFE_TRANSFER(0x00)                    // [to, token0, token1, reserve0, reserve1, amount1, amount0]
 
     afterTf:
-      0x64 calldataload calldataload iszero afterCallee jumpi // [to, token0, token1, reserve0, reserve1, amount1, amount0]
+      0x64 calldataload 0x04 add calldataload iszero afterCallee jumpi // [to, token0, token1, reserve0, reserve1, amount1, amount0]
       0x10d1e85c00000000000000000000000000000000000000000000000000000000 0x00 mstore  // [to, token0, token1, reserve0, reserve1, amount1, amount0]
       caller 0x04 mstore                                      // [to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup7 0x24 mstore                                        // [to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup6 0x44 mstore                                        // [to, token0, token1, reserve0, reserve1, amount1, amount0]
 
-      0x64 calldataload 0x20 add dup1                         // [size, size, to, token0, token1, reserve0, reserve1, amount1, amount0]
-      0x64 dup1                                               // [destOffset, offset, size, size, to, token0, token1, reserve0, reserve1, amount1, amount0]
-      calldatacopy                                            // [size, to, token0, token1, reserve0, reserve1, amount1, amount0]
-
+      0x64 calldataload 0x04 add calldataload 0x40 add dup1   // [size, retSize, to, token0, token1, reserve0, reserve1, amount1, amount0]
+      0x64 dup1                                               // [destOffset, offset, size, retSize, to, token0, token1, reserve0, reserve1, amount1, amount0]
+      calldatacopy                                            // [retSize, to, token0, token1, reserve0, reserve1, amount1, amount0]
       0x00 dup1 swap2 0x64 add 0x00                           // [argOffset, argSize, retOffset, retSize, to, token0, token1, reserve0, reserve1, amount1, amount0]
+
       dup1 dup6 gas call                                      // [success, to, token0, token1, reserve0, reserve1, amount1, amount0]
       iszero revert_UNISWAPV2CALL_FAILED jumpi                // [to, token0, token1, reserve0, reserve1, amount1, amount0]
 
