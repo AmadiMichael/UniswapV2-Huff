@@ -305,7 +305,7 @@ contract UniswapV2PairTest is Test {
         token1.transfer(address(pair), 2 ether);
         pair.mint(address(this));
 
-        bytes32 val = vm.load(address(pair), bytes32(uint256(16)));
+        bytes32 val = vm.load(address(pair), bytes32(uint256(17)));
         assertEq(
             val,
             hex"000000010000000000001bc16d674ec800000000000000000de0b6b3a7640000"
@@ -544,13 +544,6 @@ contract UniswapV2PairTest is Test {
         assertEq(token1.balanceOf(address(fl)), 0);
         assertEq(token1.balanceOf(address(pair)), 2 ether + flashloanFee);
     }
-
-    // function uniswapV2Call(
-    //     address sender,
-    //     uint256 amount0Out,
-    //     uint256 amount1Out,
-    //     bytes calldata data
-    // ) public {}
 
     function feeTo() external view returns (address) {
         return address(0);

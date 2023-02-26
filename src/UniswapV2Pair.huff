@@ -5,12 +5,13 @@
 /// @notice Adapted from UniswapV2 (https://github.com/)
 
 
-// #include "huffmate/utils/ReentrancyGuard.huff"
+#include "huffmate/auth/NonPayable.huff"
 #include "huffmate/utils/SafeTransferLib.huff"
 #include "huffmate/utils/Calls.huff"
 #include "huffmate/math/SafeMath.huff"
 #include "huffmate/math/Math.huff"
 #include "./libraries/UQ112x112.huff"
+#include "./libraries/ReentrancyGuard.huff"
 
 
 
@@ -29,7 +30,6 @@
 #define function sync() nonpayable returns ()
 #define function token0() view returns (address)
 #define function token1() view returns (address)
-
 
 
 // storage
@@ -62,7 +62,7 @@
 #define error INSUFFICIENT_LIQUIDITY_MINTED()
 #define error OVERFLOW()
 #define error INSUFFICIENT_LIQUIDITY_BURNED()
-
+#define error LOCKED()
 
 #define event Mint(address indexed sender, uint amount0, uint amount1)
 #define event Burn(address indexed sender, uint amount0, uint amount1, address indexed to)
@@ -75,7 +75,7 @@
         address indexed to
     )
 #define event Sync(uint112 reserve0, uint112 reserve1)
-#define event Console(uint256[] log)
+
 #define event Console2(bytes32[] log)
 
 
@@ -87,6 +87,9 @@
 }
 
 #define macro BURN() = takes (0) returns (0) {
+    NON_PAYABLE()
+    LOCK()
+
     GET_BALANCE_OF()                            // [token0Balance, token1Balance]
     _GET_RESERVES()                             // [reserve0, reserve1, token0Balance, token1Balance]
     address 0x00 mstore                         // [reserve0, reserve1, token0Balance, token1Balance]
@@ -139,6 +142,9 @@
         
         swap3 0x00 mstore                       // [ reserve1, amount1, resevre0]
         swap1 0x20 mstore                        // [reserve1, resevre0]
+
+        UNLOCK()
+        
         0x40 0x00 return
 }
 
@@ -161,6 +167,8 @@
 }
 
 #define macro INITIALIZE() = takes (0) returns (0) {
+    NON_PAYABLE()
+
     [_FACTORY] sload caller eq iszero revert_FORBIDDEN jumpi    // []
 
     0x04 calldataload [_TOKEN0] sstore                          // []
@@ -178,6 +186,9 @@
 }
 
 #define macro MINT() = takes (0) returns (0) {
+    NON_PAYABLE()
+    LOCK()
+
     GET_BALANCE_OF()                            // [token0Balance, token1Balance]
     _GET_RESERVES()                             // [reserve0, reserve1, token0Balance, token1Balance]
 
@@ -221,7 +232,11 @@
     emitEvent:                                        // [liquidity, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
       swap2 0x00 mstore 0x20 mstore                   // [liquidity, reserve0, reserve1, token0Balance, token1Balance]
       caller __EVENT_HASH(Mint) 0x40 0x00 log2
-      0x00 mstore 0x20 0x00 return
+      0x00 mstore 
+
+      UNLOCK()
+      
+      0x20 0x00 return
 }
 
 #define macro PRICE0_CUMULATIVE_LAST() = takes (0) returns (0) {
@@ -237,6 +252,9 @@
 }
 
 #define macro SKIM() = takes (0) returns (0) {
+    NON_PAYABLE()
+    LOCK()
+
     [_TOKEN1] sload [_TOKEN0] sload             // [token0, token1]
     GET_BALANCE_OF()                            // [token0Balance, token1Balance, token0, token1]
     _GET_RESERVES()                             // [reserve0, reserve1, token0Balance, token1Balance, token0, token1]
@@ -248,10 +266,14 @@
     SAFE_TRANSFER(0x00)                         // [amount1, token1]
     caller SAFE_TRANSFER(0x00)                  // []
 
+    UNLOCK()
     0x00 0x00 return
 }
 
 #define macro SWAP() = takes (0) returns (0) {
+    NON_PAYABLE()
+    LOCK()
+
     0x04 calldataload dup1 iszero iszero                                // [amont0GT0, amount0]
     0x24 calldataload dup1 iszero iszero                                     // [amount1GT0, amount1, amont0GT0, amount0]
     swap1 swap2 or iszero revert_INSUFFICIENT_OUTPUT_AMOUNT jumpi       // [amount1, amount0]
@@ -336,6 +358,9 @@
     swap2 0x60 mstore                                           // [to, token0, token1] 
     caller __EVENT_HASH(Swap)                                   // [swapEventHash, caller, to, token0, token1]
     0x80 0x00 log3
+
+    UNLOCK()
+
     0x00 0x00 return
 
     revert_UNISWAPV2CALL_FAILED:
@@ -365,9 +390,15 @@
 }
 
 #define macro SYNC() = takes (0) returns (0) {
+    NON_PAYABLE()
+    LOCK()
+
     _GET_RESERVES()                             // [reserve0, reserve1]
     GET_BALANCE_OF()                            // [token0Balance, token1Balance, reserve0, reserve1]
     UPDATE()                                    // []
+
+    UNLOCK()
+
     0x00 0x00 return
 }
 

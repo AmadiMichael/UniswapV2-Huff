@@ -12,6 +12,7 @@ interface IUniswapV2Pair {
     error INVALID_K();
     error UNISWAPV2CALL_FAILED();
     error FORBIDDEN();
+    error LOCKED();
 
     event Console(uint256[] log);
 

@@ -1,0 +1,32 @@
+// Interface
+#define function lock() nonpayable returns ()
+#define function unlock() nonpayable returns ()
+
+// Constants
+#define constant LOCKED_SLOT = FREE_STORAGE_POINTER()
+#define constant _UNLOCKED = 0x01
+#define constant _LOCKED = 0x02
+
+/// @title Lock
+/// @notice Locks the contract to prevent reentrancy
+#define macro LOCK() = takes (0) returns (0) {
+    [_LOCKED]                // [0x02]
+    dup1                     // [0x02, 0x02]
+    [LOCKED_SLOT]            // [locked_slot, 0x02, 0x02]
+    sload                    // [locked_slot_value, 0x02, 0x02]
+    lt                       // [locked_slot_value < 0x02, 0x02]
+    lock jumpi
+
+    // Otherwise revert with lock
+    __ERROR(LOCKED) 0x00 mstore
+    0x04 0x00 revert
+
+    lock:
+        [LOCKED_SLOT] sstore
+}
+
+/// @title Unlock
+/// @notice Unlocks the contract
+#define macro UNLOCK() = takes (0) returns (0) {
+    [_UNLOCKED] [LOCKED_SLOT] sstore
+}
