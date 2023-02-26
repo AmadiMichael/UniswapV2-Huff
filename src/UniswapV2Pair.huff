@@ -51,6 +51,7 @@
 #define constant RESERVE1_OFFSET = 0x70
 #define constant BLOCK_TIMESTAMP_LAST_OFFSET = 0xe0
 
+#define error FORBIDDEN()
 #define error UNISWAPV2CALL_FAILED()
 #define error INSUFFICIENT_OUTPUT_AMOUNT()
 #define error INSUFFICIENT_LIQUIDITY()
@@ -160,7 +161,14 @@
 }
 
 #define macro INITIALIZE() = takes (0) returns (0) {
-  // To Be Done
+    [_FACTORY] sload caller eq iszero revert_FORBIDDEN jumpi    // []
+
+    0x04 calldataload [_TOKEN0] sstore                          // []
+    0x24 calldataload [_TOKEN1] sstore                          // []
+
+    revert_FORBIDDEN:
+        __ERROR(FORBIDDEN)
+        0x00 mstore 0x04 0x00 revert
 }
 
 #define macro K_LAST() = takes (0) returns (0) {
@@ -229,7 +237,18 @@
 }
 
 #define macro SKIM() = takes (0) returns (0) {
-  // To Be Done
+    [_TOKEN1] sload [_TOKEN0] sload             // [token0, token1]
+    GET_BALANCE_OF()                            // [token0Balance, token1Balance, token0, token1]
+    _GET_RESERVES()                             // [reserve0, reserve1, token0Balance, token1Balance, token0, token1]
+
+    swap1 swap2 SAFE_SUB()                      // [amount0, reserve1, token1Balance, token0, token1]
+    swap2 SAFE_SUB()                            // [amount1, amount0, token0, token1]
+    
+    swap2 swap1 caller                          // [msg.sender, amount9, token0, amount1, token1]
+    SAFE_TRANSFER(0x00)                         // [amount1, token1]
+    caller SAFE_TRANSFER(0x00)                  // []
+
+    0x00 0x00 return
 }
 
 #define macro SWAP() = takes (0) returns (0) {

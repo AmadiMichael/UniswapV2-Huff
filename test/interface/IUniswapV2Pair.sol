@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.16;
 
 interface IUniswapV2Pair {
@@ -10,6 +11,7 @@ interface IUniswapV2Pair {
     error INSUFFICIENT_INPUT_AMOUNT();
     error INVALID_K();
     error UNISWAPV2CALL_FAILED();
+    error FORBIDDEN();
 
     event Console(uint256[] log);
 

@@ -300,17 +300,17 @@ contract UniswapV2PairTest is Test {
         pair.burn(address(this));
     }
 
-    // function testReservesPacking() public {
-    //     token0.transfer(address(pair), 1 ether);
-    //     token1.transfer(address(pair), 2 ether);
-    //     pair.mint(address(this));
+    function testReservesPacking() public {
+        token0.transfer(address(pair), 1 ether);
+        token1.transfer(address(pair), 2 ether);
+        pair.mint(address(this));
 
-    //     bytes32 val = vm.load(address(pair), bytes32(uint256(10)));
-    //     assertEq(
-    //         val,
-    //         hex"000000010000000000001bc16d674ec800000000000000000de0b6b3a7640000"
-    //     );
-    // }
+        bytes32 val = vm.load(address(pair), bytes32(uint256(16)));
+        assertEq(
+            val,
+            hex"000000010000000000001bc16d674ec800000000000000000de0b6b3a7640000"
+        );
+    }
 
     function testSwapBasicScenario() public {
         token0.transfer(address(pair), 1 ether);
