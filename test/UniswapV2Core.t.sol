@@ -16,6 +16,18 @@ contract UniswapV2PairTest is Test {
     IMintableERC20 public token1;
     TestUser testUser;
 
+    // event Console2(
+    //     bytes32 stack1,
+    //     bytes32 stack2,
+    //     bytes32 stack3,
+    //     bytes32 stack4,
+    //     bytes32 stack5,
+    //     bytes32 stack6,
+    //     bytes32 stack7,
+    //     bytes32 stack8,
+    //     bytes32 stack9
+    // );
+
     function setUp() public {
         testUser = new TestUser();
         string memory mock_wrapper = vm.readFile("src/UniswapV2Pair.huff");
@@ -45,24 +57,18 @@ contract UniswapV2PairTest is Test {
             HuffDeployer
                 .config()
                 .with_code(mock_wrapper)
-                .with_args(
-                    bytes.concat(
-                        abi.encode(address(token0)),
-                        abi.encode(address(token1)),
-                        abi.encode(18)
-                    )
-                )
+                .with_args(bytes.concat(abi.encode(18)))
                 .with_deployer(address(this))
                 .deploy("ERC20")
         );
+
+        pair.initialize(address(token0), address(token1));
 
         token0.mint(address(this), 10 ether);
         token1.mint(address(this), 10 ether);
 
         token0.mint(address(testUser), 10 ether);
         token1.mint(address(testUser), 10 ether);
-
-        vm.stopPrank();
 
         // HuffConfig config = HuffDeployer.config().with_args(
         //     bytes.concat(abi.encode(uint256(18)))
@@ -305,7 +311,7 @@ contract UniswapV2PairTest is Test {
         token1.transfer(address(pair), 2 ether);
         pair.mint(address(this));
 
-        bytes32 val = vm.load(address(pair), bytes32(uint256(17)));
+        bytes32 val = vm.load(address(pair), bytes32(uint256(9)));
         assertEq(
             val,
             hex"000000010000000000001bc16d674ec800000000000000000de0b6b3a7640000"

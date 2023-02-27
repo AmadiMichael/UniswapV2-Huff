@@ -76,9 +76,6 @@
     )
 #define event Sync(uint112 reserve0, uint112 reserve1)
 
-#define event Console2(bytes32[] log)
-
-
 
 // functions
 #define macro MINIMUM_LIQUIDITY() = takes (0) returns (0) {
@@ -173,6 +170,7 @@
 
     0x04 calldataload [_TOKEN0] sstore                          // []
     0x24 calldataload [_TOKEN1] sstore                          // []
+    0x00 0x00 return
 
     revert_FORBIDDEN:
         __ERROR(FORBIDDEN)
@@ -205,6 +203,7 @@
     dup1 iszero iszero nonZeroTotalSupply jumpi  // [totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
     [_MINIMUM_LIQUIDITY]                          // [MINIMUM_LIQUIDITY, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
     dup5 dup5 SAFE_MUL()                          // [amountsMul, MINIMUM_LIQUIDITY, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+
     SQRT() SAFE_SUB()                            // [liquidity, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
     0x00 [_MINIMUM_LIQUIDITY] _MINT()            // [liquidity, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
     swap1 pop                                    // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
@@ -543,11 +542,6 @@
 
 
 #define macro CONSTRUCTOR() = takes (0) returns (0) {
-    0x40 0x60 codesize sub 0x00                  // [memOffset, argsOffset, size] // remember 0x20 for decimals
-    codecopy                                     // []
-    0x00 mload [_TOKEN0] sstore
-    0x20 mload [_TOKEN1] sstore
-
     caller [_FACTORY] sstore
 
     ERC20_CONSTRUCTOR()
@@ -557,6 +551,7 @@
 
 
 // helpers, internal and private functions
+
 #define macro _GET_RESERVES() = takes(0) returns(2) {
     [PACKED_RESERVE_INFO] sload             // [packedReserveSlot]
     dup1                                    // [packedReserveSlot, packedReserveSlot]
@@ -699,13 +694,20 @@
       pop pop                                     // []
 }
 
-  // 0x07 0x00 mstore
-  //     dup1 0x20 mstore
-  //     dup2 0x40 mstore
-  //     dup3 0x60 mstore
-  //     dup4 0x80 mstore
-  //      dup5 0xa0 mstore
-  //     dup6 0xc0 mstore
-  //     dup7 0xe0 mstore
-  //     __EVENT_HASH(Console2) 0x100 0x00
+
+
+// Console log helpers
+
+  // 0x20 0x00 mstore
+  //     0x07 0x20 mstore
+  //     dup1 0x40 mstore
+  //     dup2 0x60 mstore
+  //     dup3 0x80 mstore
+  //     dup4 0xa0 mstore
+  //     dup5 0xc0 mstore
+  //     dup6 0xe0 mstore
+  //     dup7 0x100 mstore
+  //     __EVENT_HASH(Console2) 0x120 0x00
   //     log1
+
+  // #define event Console2(bytes32 stack1, bytes32 stack2, bytes32 stack3, bytes32 stack4, bytes32 stack5, bytes32 stack6, bytes32 stack7, bytes32 stack8, bytes32 stack9)

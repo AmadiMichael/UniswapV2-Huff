@@ -14,8 +14,6 @@ interface IUniswapV2Pair {
     error FORBIDDEN();
     error LOCKED();
 
-    event Console(uint256[] log);
-
     event Approval(address indexed owner, address indexed spender, uint value);
     event Transfer(address indexed from, address indexed to, uint value);
 
