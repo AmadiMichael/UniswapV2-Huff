@@ -691,21 +691,3 @@
     UPDATE_continue:
       pop pop                                     // []
 }
-
-
-
-// Console log helpers
-
-  // 0x20 0x00 mstore
-  //     0x07 0x20 mstore
-  //     dup1 0x40 mstore
-  //     dup2 0x60 mstore
-  //     dup3 0x80 mstore
-  //     dup4 0xa0 mstore
-  //     dup5 0xc0 mstore
-  //     dup6 0xe0 mstore
-  //     dup7 0x100 mstore
-  //     __EVENT_HASH(Console2) 0x120 0x00
-  //     log1
-
-  // #define event Console2(bytes32 stack1, bytes32 stack2, bytes32 stack3, bytes32 stack4, bytes32 stack5, bytes32 stack6, bytes32 stack7, bytes32 stack8, bytes32 stack9)
