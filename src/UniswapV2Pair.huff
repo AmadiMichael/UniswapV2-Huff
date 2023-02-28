@@ -1,9 +1,8 @@
 /// @title UniswapV2Pair
 /// @notice SPDX-License-Identifier: MIT
 /// @author AmadiMichael <https://github.com/AmadiMichael>
-/// @notice 
-/// @notice Adapted from UniswapV2 (https://github.com/)
-
+/// @notice UniswapV2Pair contract implementation in Huff
+/// @notice Adapted from UniswapV2 (https://github.com/Uniswap/v2-core/blob/master/contracts/UniswapV2Pair)
 
 #include "huffmate/auth/NonPayable.huff"
 #include "huffmate/utils/SafeTransferLib.huff"
@@ -47,7 +46,7 @@
 #define constant _MINIMUM_LIQUIDITY = 0x3e8
 #define constant SELECTOR = 0xa9059cbb
 // offsets
-#define constant RESERVE0_OFFSET = 0x00
+// #define constant RESERVE0_OFFSET = 0x00
 #define constant RESERVE1_OFFSET = 0x70
 #define constant BLOCK_TIMESTAMP_LAST_OFFSET = 0xe0
 
@@ -58,7 +57,6 @@
 #define error INVALID_TO()
 #define error INSUFFICIENT_INPUT_AMOUNT()
 #define error INVALID_K()
-
 #define error INSUFFICIENT_LIQUIDITY_MINTED()
 #define error OVERFLOW()
 #define error INSUFFICIENT_LIQUIDITY_BURNED()

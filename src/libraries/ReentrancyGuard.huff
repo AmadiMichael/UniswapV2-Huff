@@ -1,3 +1,6 @@
+/// @notice adapted and modified from huffmate reentrancy guard
+
+
 // Interface
 #define function lock() nonpayable returns ()
 #define function unlock() nonpayable returns ()

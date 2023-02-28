@@ -1,8 +1,8 @@
 /// @title UQ112x112
 /// @notice SPDX-License-Identifier: MIT
 /// @author AmadiMichael <https://github.com/AmadiMichael>
-/// @notice 
-/// @notice Adapted from UniswapV2 (https://github.com/)
+/// @notice Uniswap v2 UQ112x112 library rewritten in huff
+/// @notice Adapted from UniswapV2 (https://github.com/Uniswap/v2-core/blob/master/contracts/libraries/UQ112x112.sol)
 
 
 #define function encode(uint112) pure returns (uint224)

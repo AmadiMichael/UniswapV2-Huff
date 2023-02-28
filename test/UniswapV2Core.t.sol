@@ -1,3 +1,7 @@
+/**
+ * @notice tests gotten from @jeiwan's ZuniswapV2Pair tests ("https://github.com/Jeiwan/zuniswapv2/blob/main/test/ZuniswapV2Pair.t.sol")
+ */
+
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
@@ -15,18 +19,6 @@ contract UniswapV2PairTest is Test {
     IMintableERC20 public token0;
     IMintableERC20 public token1;
     TestUser testUser;
-
-    // event Console2(
-    //     bytes32 stack1,
-    //     bytes32 stack2,
-    //     bytes32 stack3,
-    //     bytes32 stack4,
-    //     bytes32 stack5,
-    //     bytes32 stack6,
-    //     bytes32 stack7,
-    //     bytes32 stack8,
-    //     bytes32 stack9
-    // );
 
     function setUp() public {
         testUser = new TestUser();
@@ -69,16 +61,6 @@ contract UniswapV2PairTest is Test {
 
         token0.mint(address(testUser), 10 ether);
         token1.mint(address(testUser), 10 ether);
-
-        // HuffConfig config = HuffDeployer.config().with_args(
-        //     bytes.concat(abi.encode(uint256(18)))
-        // );
-
-        // pair = IUniswapV2Pair(config.deploy("UniswapV2Pair"));
-        // console.log(address(pair));
-        // console.logBytes(address(pair).code);
-        // console.logBytes(address(token0).code);
-        // console.logBytes(address(token1).code);
     }
 
     function testVal() public {
