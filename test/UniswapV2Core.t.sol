@@ -533,7 +533,7 @@ contract UniswapV2PairTest is Test {
         assertEq(token1.balanceOf(address(pair)), 2 ether + flashloanFee);
     }
 
-    function feeTo() external view returns (address) {
+    function feeTo() external pure returns (address) {
         return address(0);
     }
 }
@@ -588,9 +588,9 @@ contract Flashloaner {
     }
 
     function uniswapV2Call(
-        address sender,
-        uint256 amount0Out,
-        uint256 amount1Out,
+        address /** sender */,
+        uint256 /** amount0Out */,
+        uint256 /** amount1Out */,
         bytes calldata data
     ) public {
         address tokenAddress = abi.decode(data, (address));
