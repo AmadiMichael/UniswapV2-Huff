@@ -4,10 +4,11 @@
 /// @notice Uniswap v2 UQ112x112 library rewritten in huff
 /// @notice Adapted from UniswapV2 (https://github.com/Uniswap/v2-core/blob/master/contracts/libraries/UQ112x112.sol)
 
-
+// Define interface
 #define function encode(uint112) pure returns (uint224)
 #define function uqdiv(uint224, uint112) pure returns (uint224)
 
+// Define macro
 #define macro ENCODE() = takes(1) returns(1) {
     // expects stack [uint112-x]
     0xffffffffffffffffffffffffffff dup2 gt not_uint112 jumpi
