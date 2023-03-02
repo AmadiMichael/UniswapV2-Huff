@@ -654,7 +654,7 @@
     [__UINT112_MAX] dup2 gt overflow jumpi
     [__UINT112_MAX] dup3 gt overflow jumpi
 
-    0x100000000 timestamp mod                       // [blockTimestamp, balance0, balance1, reserve0, reserve1]
+    0x100000000 timestamp SAFE_MOD()                       // [blockTimestamp, balance0, balance1, reserve0, reserve1]
     [PACKED_RESERVE_INFO] sload                     // [packedReserveInfo, blockTimestamp, balance0, balance1, reserve0, reserve1]
     [BLOCK_TIMESTAMP_LAST_OFFSET] shr               // [blocktimestamplast, blocktimestamp, balance0, balance1, reserve0, reserve1]
     dup2 sub                                        // [timeElapsed, blocktimestamp, balance0, balance1, reserve0, reserve1]
