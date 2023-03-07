@@ -4,6 +4,11 @@
 /// @notice UniswapV2Pair contract implementation in Huff
 /// @notice Adapted from UniswapV2 (https://github.com/Uniswap/v2-core/blob/master/contracts/UniswapV2Pair)
 
+
+/// @notice `returndatasize` and `callvalue` are used to push zero to the stack in some instances below (saves one gas per push)
+/// @notice `callvalue` is used in cases where an external call that returns data has been made earlier which will make `returndatasize` return a non-zero value
+/// @notice `callvalue` is safe to use here because no function here is payable which means `callvalue` will always push 0x00 to the stack
+
 #include "huffmate/auth/NonPayable.huff"
 #include "huffmate/utils/SafeTransferLib.huff"
 #include "huffmate/utils/Calls.huff"
@@ -208,22 +213,29 @@
 
     // mint fee
     dup4 dup4 MINT_FEE()                          // [feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+
+    // load totalsupply untop the stack
     [TOTAL_SUPPLY_SLOT] sload                     // [totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
 
+    // If totalsupply is zero use `sqrt(amount0 * amount1)` to mint LP and subtract MINIMUM_LIQUIDITY`
+    // else jump to nonZeroTotalSupply jump label
     dup1 iszero iszero nonZeroTotalSupply jumpi   // [totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
     [_MINIMUM_LIQUIDITY]                          // [MINIMUM_LIQUIDITY, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
     dup5 dup5 SAFE_MUL()                          // [amountsMul, MINIMUM_LIQUIDITY, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-
     SQRT() SAFE_SUB()                             // [liquidity, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+
+    // mint minimum liquidity to address(0) and jump to continue jump label
     callvalue [_MINIMUM_LIQUIDITY] _MINT()             // [liquidity, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
     swap1 pop                                     // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
     continue jump                                 // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
 
+    // If total supply is greater than 0, use `min((amount0 * _totalSupply) / _reserve0, (amount1 * _totalSupply) / _reserve1)` to calculate liquidty to mint to `to` address
     nonZeroTotalSupply:                                     // [totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
       dup1 dup4 SAFE_MUL() dup7 swap1 SAFE_DIV()            // [num2, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
       swap1 dup5 SAFE_MUL() dup7 swap1 SAFE_DIV()           // [num1, num2, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
       MIN()                                                 // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
 
+    // continues execution from above and mints the calculated liqudity to `to` address
     continue:                                                 // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
       dup1 iszero revertInsufficientLiquidityMinted jumpi     // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
       0x04 calldataload dup2 _MINT()                          // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
@@ -233,11 +245,15 @@
       __ERROR(INSUFFICIENT_LIQUIDITY_MINTED) callvalue mstore
       0x04 callvalue revert
 
+    // arrange stack and call UPDATE 
     finish:                                           // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
       dup6 dup6 dup10 dup10 UPDATE()                  // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+
+      // If feeOn returns true (1 and above) update KLAST by setting it to be the product of the updated reserves then jump to emit mint event else only jump to emit mint event
       swap1 iszero emitEvent jumpi
       _GET_RESERVES() SAFE_MUL() [_K_LAST] sstore     // [liquidity, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
 
+    // emit mint event
     emitEvent:                                        // [liquidity, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
       swap2 callvalue mstore 0x20 mstore                   // [liquidity, reserve0, reserve1, token0Balance, token1Balance]
       caller __EVENT_HASH(Mint) 0x40 callvalue log2
@@ -303,11 +319,11 @@
 
 
     dup7 iszero nextTf jumpi                                // [to, token0, token1, reserve0, reserve1, amount1, amount0]
-    dup2 dup8 dup3 SAFE_TRANSFER(callvalue)                      // [to, token0, token1, reserve0, reserve1, amount1, amount0]
+    dup2 dup8 dup3 SAFE_TRANSFER(callvalue)                 // [to, token0, token1, reserve0, reserve1, amount1, amount0]
 
     nextTf:                                                 // [to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup6 iszero afterTf jumpi                             // [to, token0, token1, reserve0, reserve1, amount1, amount0]
-      dup3 dup7 dup3 SAFE_TRANSFER(callvalue)                    // [to, token0, token1, reserve0, reserve1, amount1, amount0]
+      dup3 dup7 dup3 SAFE_TRANSFER(callvalue)               // [to, token0, token1, reserve0, reserve1, amount1, amount0]
 
     afterTf:
       0x64 calldataload 0x04 add calldataload iszero afterCallee jumpi // [to, token0, token1, reserve0, reserve1, amount1, amount0]
@@ -327,15 +343,15 @@
     afterCallee:                                                // [to, token0, token1, reserve0, reserve1, amount1, amount0]
       GET_BALANCE_OF()                                          // [balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
     
-      dup9 dup7 sub dup2 gt opt0_0 jumpi                          // [balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
-      callvalue opt1Check jump                                         // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
+      dup9 dup7 sub dup2 gt opt0_0 jumpi                         // [balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
+      callvalue opt1Check jump                                   // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
     opt0_0:                                                     // [balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup9 dup7 sub dup2 sub                                    // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
     opt1Check:                                                  // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup9 dup9 sub dup4 gt opt1_0 jumpi                        // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
-      callvalue adjustedCheck jump                                   // [amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
+      callvalue adjustedCheck jump                              // [amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
     opt1_0:                                                     // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup9 dup9 sub dup4 sub                                    // [amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
@@ -360,7 +376,7 @@
       pop pop swap7 swap1 swap8                                   // [reserve1, reserve0, balance0, balance1, to, token0, token1, amount1In, amount0In, amount1, amount0]
       swap3 swap1 swap2 UPDATE()                                  // [to, token0, token1, amount1In, amount0In, amount1, amount0]
 
-      swap4 callvalue mstore                                           // [token0, token1, amount1In, to, amount1, amount0]
+      swap4 callvalue mstore                                      // [token0, token1, amount1In, to, amount1, amount0]
       swap2 0x20 mstore                                           // [token1, token0, to, amount1, amount0] 
       swap4 0x40 mstore                                           // [token0, to, amount1, token1] 
       swap2 0x60 mstore                                           // [to, token0, token1] 
