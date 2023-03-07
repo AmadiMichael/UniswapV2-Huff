@@ -47,6 +47,8 @@
 
 
 // constants
+
+#define constant OneToPower6 = 0xf4240
 #define constant __UINT112_MAX = 0xffffffffffffffffffffffffffff
 #define constant _MINIMUM_LIQUIDITY = 0x3e8
 #define constant SELECTOR = 0xa9059cbb
@@ -157,6 +159,7 @@
         swap3 callvalue mstore                       // [ reserve1, amount1, resevre0]
         swap1 0x20 mstore                       // [reserve1, resevre0]
 
+        // unlock reentrancy lock
         UNLOCK()
         
         0x40 callvalue return
@@ -298,84 +301,113 @@
     NON_PAYABLE()
     LOCK()
 
+    // check that at least 1 of amount0Out and amount1Out are a non-zero value, else revert with INSUFFICIENT_OUTPUT_AMOUNT error
     0x04 calldataload dup1 iszero iszero                                // [amont0GT0, amount0]
     0x24 calldataload dup1 iszero iszero                                // [amount1GT0, amount1, amont0GT0, amount0]
     swap1 swap2 or iszero revert_INSUFFICIENT_OUTPUT_AMOUNT jumpi       // [amount1, amount0]
+
+    // store the token reserves on the stack
     _GET_RESERVES()                                                     // [reserve0, reserve1, amount1, amount0]
 
-    
+    // check that both amount0Out and amount1Out are less than reserve0 and reserve1 respectively, else revert with INSUFFICIENT_LIQUIDITY error
     dup4 dup2 gt                                                        // [Reserve0GTamount0, reserve0, reserve1, amount1, amount0]
     dup4 dup4 gt                                                        // [Reserve1GTamount1, Reserve0GTamount0, reserve0, reserve1, amount1, amount0]
     and iszero revert_INSUFFICIENT_LIQUIDITY jumpi                      // [reserve0, reserve1, amount1, amount0]
 
-
+    // load TOKEN0 address and TOKEN1 address from storage and the `to` address from calldata
     [_TOKEN1] sload                                         // [token1, reserve0, reserve1, amount1, amount0]
     [_TOKEN0] sload                                         // [token0, token1, reserve0, reserve1, amount1, amount0]
     0x44 calldataload                                       // [to, token0, token1, reserve0, reserve1, amount1, amount0]
 
-
+    // check that `to` address is not equal to TOKEN0 address or TOKEN1 address, else revert with INVALID_TO error
     dup1 dup3 eq revert_INVALID_TO jumpi                    // [to, token0, token1, reserve0, reserve1, amount1, amount0]
     dup1 dup4 eq revert_INVALID_TO jumpi                    // [to, token0, token1, reserve0, reserve1, amount1, amount0]
 
-
+    // Optimistically transfer amount0Out (if non-zero) to `to` address
     dup7 iszero nextTf jumpi                                // [to, token0, token1, reserve0, reserve1, amount1, amount0]
     dup2 dup8 dup3 SAFE_TRANSFER(callvalue)                 // [to, token0, token1, reserve0, reserve1, amount1, amount0]
 
     nextTf:                                                 // [to, token0, token1, reserve0, reserve1, amount1, amount0]
+      // Optimistically transfer amount1Out(if nonzero) to `to` address
       dup6 iszero afterTf jumpi                             // [to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup3 dup7 dup3 SAFE_TRANSFER(callvalue)               // [to, token0, token1, reserve0, reserve1, amount1, amount0]
 
     afterTf:
+      // check if `data` parameter in calldata has a length greater than 1, if length is 0, jump to afterCallee jump label
+      // else prepare memory to execute `IUniswapV2Callee(to).uniswapV2Call(msg.sender, amount0Out, amount1Out, data)`
       0x64 calldataload 0x04 add calldataload iszero afterCallee jumpi // [to, token0, token1, reserve0, reserve1, amount1, amount0]
       __RIGHTPAD(0x10d1e85c) callvalue mstore                        // [to, token0, token1, reserve0, reserve1, amount1, amount0]
       caller 0x04 mstore                                        // [to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup7 0x24 mstore                                          // [to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup6 0x44 mstore                                          // [to, token0, token1, reserve0, reserve1, amount1, amount0]
 
+      // prepare the stack to execute `IUniswapV2Callee(to).uniswapV2Call(msg.sender, amount0Out, amount1Out, data)`
       0x64 calldataload 0x04 add calldataload 0x40 add dup1     // [size, retSize, to, token0, token1, reserve0, reserve1, amount1, amount0]
       0x64 dup1                                                 // [destOffset, offset, size, retSize, to, token0, token1, reserve0, reserve1, amount1, amount0]
       calldatacopy                                              // [retSize, to, token0, token1, reserve0, reserve1, amount1, amount0]
       callvalue dup1 swap2 0x64 add callvalue                             // [argOffset, argSize, retOffset, retSize, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
+      // execute `IUniswapV2Callee(to).uniswapV2Call(msg.sender, amount0Out, amount1Out, data)` if it fails, revert with UNISWAPV2CALL_FAILED error
       dup1 dup6 gas call                                        // [success, to, token0, token1, reserve0, reserve1, amount1, amount0]
       iszero revert_UNISWAPV2CALL_FAILED jumpi                  // [to, token0, token1, reserve0, reserve1, amount1, amount0]
 
     afterCallee:                                                // [to, token0, token1, reserve0, reserve1, amount1, amount0]
+      // get the current balance of the pair contract address for both tokens and store on the stack
       GET_BALANCE_OF()                                          // [balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
-    
+      
+      // TIME TO CALCULATE HOW MUCH THE POOL IS TO GET FOR THIS ACT OF BENOVELENCE ABOVE (PLUS FEES 😉)
+      /** uint256 amount0In = balance0 > _reserve0 - amount0Out
+            ? balance0 - (_reserve0 - amount0Out)
+            : 0;
+        uint256 amount1In = balance1 > _reserve1 - amount1Out
+            ? balance1 - (_reserve1 - amount1Out)
+            : 0;
+      */
+      // if `balance0` is greater than `_reserve0 - amount0Out` then jump to opt0_0 jump label
+      // else push 0x00 to the stack as amount0In and jump to check for amount1In at jump label opt1Check
       dup9 dup7 sub dup2 gt opt0_0 jumpi                         // [balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
       callvalue opt1Check jump                                   // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
+    // assign amount0In to the result of `balance0 - (_reserve0 - amount0Out)` 
     opt0_0:                                                     // [balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup9 dup7 sub dup2 sub                                    // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
+    // if `balance1` is greater than `_reserve1 - amount1Out` then jump to opt1_0 jump label
+    // else push 0x00 to the stack as amount1In jump to adjustedCheck jump label
     opt1Check:                                                  // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup9 dup9 sub dup4 gt opt1_0 jumpi                        // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
       callvalue adjustedCheck jump                              // [amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
+    // assign amount1In to the result of `balance1 - (_reserve1 - amount1Out)` 
     opt1_0:                                                     // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup9 dup9 sub dup4 sub                                    // [amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
-
+    
     adjustedCheck:                                              // [amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
+
+      // before calculating balance0 and balance1 adjusted we confirm that either of amount0In or amount1In is not 0, else we revert with INSUFFICIENT_INPUT_AMOUNT error
       dup1 iszero iszero adjustedJump jumpi                     // [amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup2 iszero revert_INSUFFICIENT_INPUT_AMOUNT jumpi        // [amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
     adjustedJump:
+      // we calculate balance0Adjusted with `balance0 * 1000 - amount0In * 3`
       0x03 dup3 SAFE_MUL()                                        // [rightSide, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
       0x3e8 dup5 SAFE_MUL() SAFE_SUB()                            // [balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
+      // we calculate balance0Adjusted with `balance1 * 1000 - amount1In * 3`
       0x03 dup3 SAFE_MUL()                                        // [rightSide, balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
       0x3e8 dup7 SAFE_MUL() SAFE_SUB()                            // [balance1Adjusted, balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
-
+      // check that `balance0Adjusted * balance1Adjusted` is greater than or equal to `reserve0 * reserve1 * 1e6` else revert with `K` error
       dup2 dup2 SAFE_MUL()                                        // [balAdjBasedK, balance1Adjusted, balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
-      dup12 dup12 0xf4240 
+      dup12 dup12 [OneToPower6] 
       SAFE_MUL() SAFE_MUL()                                       // [calK, balAdjBasedK, balance1Adjusted, balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
-      
       lt iszero revert_K jumpi                                    // [balance1Adjusted, balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
+
+      // prepare the stack and call UPDATE()
       pop pop swap7 swap1 swap8                                   // [reserve1, reserve0, balance0, balance1, to, token0, token1, amount1In, amount0In, amount1, amount0]
       swap3 swap1 swap2 UPDATE()                                  // [to, token0, token1, amount1In, amount0In, amount1, amount0]
 
+      // Prepare the stack and memory and emit swap event
       swap4 callvalue mstore                                      // [token0, token1, amount1In, to, amount1, amount0]
       swap2 0x20 mstore                                           // [token1, token0, to, amount1, amount0] 
       swap4 0x40 mstore                                           // [token0, to, amount1, token1] 
