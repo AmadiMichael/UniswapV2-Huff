@@ -50,6 +50,7 @@
 #define constant RESERVE1_OFFSET = 0x70
 #define constant BLOCK_TIMESTAMP_LAST_OFFSET = 0xe0
 
+// ERRORS
 #define error FORBIDDEN()
 #define error UNISWAPV2CALL_FAILED()
 #define error INSUFFICIENT_OUTPUT_AMOUNT()
@@ -62,6 +63,7 @@
 #define error INSUFFICIENT_LIQUIDITY_BURNED()
 #define error LOCKED()
 
+// EVENTS
 #define event Mint(address indexed sender, uint amount0, uint amount1)
 #define event Burn(address indexed sender, uint amount0, uint amount1, address indexed to)
 #define event Swap(
@@ -77,76 +79,88 @@
 
 // functions
 #define macro MINIMUM_LIQUIDITY() = takes (0) returns (0) {
-    [_MINIMUM_LIQUIDITY] 0x00 mstore
-    0x20 0x00 return
+    [_MINIMUM_LIQUIDITY] returndatasize mstore
+    0x20 returndatasize return
 }
 
+// Burn function
 #define macro BURN() = takes (0) returns (0) {
+    // require no ether is sent, revert otherwise
     NON_PAYABLE()
+    // set reentrancy lock to true
     LOCK()
 
+    // get address(this) balance in token0 and token1
     GET_BALANCE_OF()                            // [token0Balance, token1Balance]
     _GET_RESERVES()                             // [reserve0, reserve1, token0Balance, token1Balance]
-    address 0x00 mstore                         // [reserve0, reserve1, token0Balance, token1Balance]
 
+    // get balanceOf(address(this)) ie liquidity sent to be burnt
     address                                     // [account, reserve0, reserve1, token0Balance, token1Balance]
-    [BALANCE_SLOT] LOAD_ELEMENT_FROM_KEYS(0x00) // [liquidity, reserve0, reserve1, token0Balance, token1Balance]
+    [BALANCE_SLOT] LOAD_ELEMENT_FROM_KEYS(callvalue) // [liquidity, reserve0, reserve1, token0Balance, token1Balance]
 
+    // arrange the stack and call MINT_FEE() then load totalSupply slot
     dup3 dup3 MINT_FEE()                        // [feeOn, liquidity, reserve0, reserve1, token0Balance, token1Balance]
     [TOTAL_SUPPLY_SLOT] sload                   // [totalSupply, feeOn, liquidity, reserve0, reserve1, token0Balance, token1Balance]
 
+    // prepare stack to calculate amount of token0 and token1 to send to `to` address from calldata
     swap6 swap1 swap5                           // [token0Balance, token1Balance, liquidity, reserve0, reserve1, feeOn, totalSupply]
     dup7 swap1 dup4                             // [liquidity, token0balance, totalSupply, token1Balance, liquidity, reserve0, reserve1, feeOn, totalSupply]
 
+    // calculate amount of token0 and token1 to send to `to` address
     SAFE_MUL() SAFE_DIV()                       // [amount0, token1Balance, liquidity, reserve0, reserve1, feeOn, totalSupply]
     swap6 swap1 dup3                            // [liquidity, token1Balance, totalSupply, liquidity, reserve0, reserve1, feeOn, amount0]
     SAFE_MUL() SAFE_DIV()                       // [amount1, liquidity, reserve0, reserve1, feeOn, amount0]
 
+    // revert with INSUFFICIENT_LIQUIDITY_BURNED if either of amount0 or amount1 to sent to LP is zero
     dup1 iszero revert_insufficient_lp_burn jumpi
     dup6 iszero revert_insufficient_lp_burn jumpi
 
+    // Burn the liquidity tokens from address(this) balance and use SAFE_TRANSFER Ffrom huffmate to safely send token0 and token1 to `to` address
     swap1 address swap1 _BURN()                 // [amount1 resevre0 reserve1, feeOn, amount0]
     [_TOKEN0] sload dup6 0x04 calldataload      // [to, amount, token0, amount1 resevre0 reserve1, feeOn, amount0]
-    SAFE_TRANSFER(0x00)                         // [amount1 resevre0 reserve1, feeOn, amount0]
+    SAFE_TRANSFER(callvalue)                         // [amount1 resevre0 reserve1, feeOn, amount0]
     [_TOKEN1] sload dup2 0x04 calldataload      // [to, amount, token1, amount1 resevre0 reserve1, feeOn, amount0]
-    SAFE_TRANSFER(0x00)                         // [amount1 resevre0 reserve1, feeOn, amount0]
+    SAFE_TRANSFER(callvalue)                         // [amount1 resevre0 reserve1, feeOn, amount0]
 
+    // get the new balanceOf to be used to call UPDATE()
     GET_BALANCE_OF()                            // [token0Balance, token1Balance, amount1 resevre0 reserve1, feeOn, amount0]
 
+    // arrange the stack and call UPDATE()
     dup4 dup6                                   // [reserve1, resevre0, token0Balance, token1Balance, amount1 resevre0 reserve1, feeOn, amount0]
     swap3 swap1                                 // [resevre0, token1Balance, token0Balance, reserve1, amount1 resevre0 reserve1, feeOn, amount0]
     swap2                                       // [token0Balance, token1Balance, reserve0, reserve1, amount1 resevre0 reserve1, feeOn, amount0]
     UPDATE()                                    // [amount1 resevre0 reserve1, feeOn, amount0]
 
+    // If feeOn returns true (1 and above) update KLAST by setting it to be the product of the updated reserves then jump to emit burn event else only jump to emit burn event
     swap3 iszero BURN_emitevent jumpi           // [resevre0 reserve1, amount1, amount0]
     _GET_RESERVES() SAFE_MUL() [_K_LAST] sstore // [resevre0 reserve1, amount1, amount0]
     BURN_emitevent jump
 
     revert_insufficient_lp_burn:
-      __ERROR(INSUFFICIENT_LIQUIDITY_BURNED) 0x00 mstore
-      0x04 0x00 revert
+      __ERROR(INSUFFICIENT_LIQUIDITY_BURNED) callvalue mstore
+      0x04 callvalue revert
 
-    
+    // emits burn event with indexed and non indexed topics and parameters
     BURN_emitevent:                             // [resevre0 reserve1, amount1, amount0]
-        dup4 0x00 mstore                        // [resevre0 reserve1, amount1, amount0]
+        dup4 callvalue mstore                        // [resevre0 reserve1, amount1, amount0]
         dup3 0x20 mstore                        // [resevre0 reserve1, amount1, amount0]
         0x04 calldataload                       // [to, resevre0 reserve1, amount1, amount0]
         caller                                  // [sender, to, resevre0 reserve1, amount1, amount0]
         __EVENT_HASH(Burn)                      // [eventsig, sender, to, resevre0 reserve1, amount1, amount0]
-        0x40 0x00 log3                          // [resevre0 reserve1, amount1, amount0]
+        0x40 callvalue log3                          // [resevre0 reserve1, amount1, amount0]
         
-        swap3 0x00 mstore                       // [ reserve1, amount1, resevre0]
+        swap3 callvalue mstore                       // [ reserve1, amount1, resevre0]
         swap1 0x20 mstore                       // [reserve1, resevre0]
 
         UNLOCK()
         
-        0x40 0x00 return
+        0x40 callvalue return
 }
 
 #define macro FACTORY() = takes (0) returns (0) {
     [_FACTORY] sload       
-    0x00 mstore
-    0x20 0x00 return
+    returndatasize mstore
+    0x20 returndatasize return
 }
 
 #define macro GET_RESERVES() = takes (0) returns (0) {
@@ -156,9 +170,9 @@
     dup2 [RESERVE1_OFFSET] shr              // [shifted_packedReserveSlot, reserve0, packedReserveSlot]
     0xffffffffffffffffffffffffffff and      // [reserve1, reserve0, packedReserveSlot] 
     swap2 [BLOCK_TIMESTAMP_LAST_OFFSET] shr // [blocktimestampLast, reserve0, reserve1]
-    0x40 mstore 0x00 mstore 0x20 mstore     // []
+    0x40 mstore returndatasize mstore 0x20 mstore     // []
 
-    0x60 0x00 return
+    0x60 returndatasize return
 }
 
 #define macro INITIALIZE() = takes (0) returns (0) {
@@ -168,17 +182,17 @@
 
     0x04 calldataload [_TOKEN0] sstore                          // []
     0x24 calldataload [_TOKEN1] sstore                          // []
-    0x00 0x00 return
+    stop
 
     revert_FORBIDDEN:
         __ERROR(FORBIDDEN)
-        0x00 mstore 0x04 0x00 revert
+        returndatasize mstore 0x04 returndatasize revert
 }
 
 #define macro K_LAST() = takes (0) returns (0) {
     [_K_LAST] sload       
-    0x00 mstore
-    0x20 0x00 return
+    returndatasize mstore
+    0x20 returndatasize return
 }
 
 #define macro MINT() = takes (0) returns (0) {
@@ -194,8 +208,6 @@
 
     // mint fee
     dup4 dup4 MINT_FEE()                          // [feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-     
-
     [TOTAL_SUPPLY_SLOT] sload                     // [totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
 
     dup1 iszero iszero nonZeroTotalSupply jumpi   // [totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
@@ -203,7 +215,7 @@
     dup5 dup5 SAFE_MUL()                          // [amountsMul, MINIMUM_LIQUIDITY, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
 
     SQRT() SAFE_SUB()                             // [liquidity, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-    0x00 [_MINIMUM_LIQUIDITY] _MINT()             // [liquidity, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
+    callvalue [_MINIMUM_LIQUIDITY] _MINT()             // [liquidity, totalSupply, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
     swap1 pop                                     // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
     continue jump                                 // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
 
@@ -218,8 +230,8 @@
       finish jump
 
     revertInsufficientLiquidityMinted:
-      __ERROR(INSUFFICIENT_LIQUIDITY_MINTED) 0x00 mstore
-      0x04 0x00 revert
+      __ERROR(INSUFFICIENT_LIQUIDITY_MINTED) callvalue mstore
+      0x04 callvalue revert
 
     finish:                                           // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
       dup6 dup6 dup10 dup10 UPDATE()                  // [liquidity, feeOn, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
@@ -227,25 +239,24 @@
       _GET_RESERVES() SAFE_MUL() [_K_LAST] sstore     // [liquidity, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
 
     emitEvent:                                        // [liquidity, amount1, amount0, reserve0, reserve1, token0Balance, token1Balance]
-      swap2 0x00 mstore 0x20 mstore                   // [liquidity, reserve0, reserve1, token0Balance, token1Balance]
-      caller __EVENT_HASH(Mint) 0x40 0x00 log2
-      0x00 mstore 
+      swap2 callvalue mstore 0x20 mstore                   // [liquidity, reserve0, reserve1, token0Balance, token1Balance]
+      caller __EVENT_HASH(Mint) 0x40 callvalue log2
+      callvalue mstore 
 
       UNLOCK()
-      
-      0x20 0x00 return
+      0x20 callvalue return
 }
 
 #define macro PRICE0_CUMULATIVE_LAST() = takes (0) returns (0) {
     [_PRICE0_CUMULATIVE_LAST] sload       
-    0x00 mstore
-    0x20 0x00 return
+    returndatasize mstore
+    0x20 returndatasize return
 }
 
 #define macro PRICE1_CUMULATIVE_LAST() = takes (0) returns (0) {
     [_PRICE1_CUMULATIVE_LAST] sload       
-    0x00 mstore
-    0x20 0x00 return
+    returndatasize mstore
+    0x20 returndatasize return
 }
 
 #define macro SKIM() = takes (0) returns (0) {
@@ -260,11 +271,11 @@
     swap2 SAFE_SUB()                            // [amount1, amount0, token0, token1]
     
     swap2 swap1 caller                          // [msg.sender, amount9, token0, amount1, token1]
-    SAFE_TRANSFER(0x00)                         // [amount1, token1]
-    caller SAFE_TRANSFER(0x00)                  // []
+    SAFE_TRANSFER(callvalue)                         // [amount1, token1]
+    caller SAFE_TRANSFER(callvalue)                  // []
 
     UNLOCK()
-    0x00 0x00 return
+    stop
 }
 
 #define macro SWAP() = takes (0) returns (0) {
@@ -292,15 +303,15 @@
 
 
     dup7 iszero nextTf jumpi                                // [to, token0, token1, reserve0, reserve1, amount1, amount0]
-    dup2 dup8 dup3 SAFE_TRANSFER(0x00)                      // [to, token0, token1, reserve0, reserve1, amount1, amount0]
+    dup2 dup8 dup3 SAFE_TRANSFER(callvalue)                      // [to, token0, token1, reserve0, reserve1, amount1, amount0]
 
     nextTf:                                                 // [to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup6 iszero afterTf jumpi                             // [to, token0, token1, reserve0, reserve1, amount1, amount0]
-      dup3 dup7 dup3 SAFE_TRANSFER(0x00)                    // [to, token0, token1, reserve0, reserve1, amount1, amount0]
+      dup3 dup7 dup3 SAFE_TRANSFER(callvalue)                    // [to, token0, token1, reserve0, reserve1, amount1, amount0]
 
     afterTf:
       0x64 calldataload 0x04 add calldataload iszero afterCallee jumpi // [to, token0, token1, reserve0, reserve1, amount1, amount0]
-      __RIGHTPAD(0x10d1e85c) 0x00 mstore                        // [to, token0, token1, reserve0, reserve1, amount1, amount0]
+      __RIGHTPAD(0x10d1e85c) callvalue mstore                        // [to, token0, token1, reserve0, reserve1, amount1, amount0]
       caller 0x04 mstore                                        // [to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup7 0x24 mstore                                          // [to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup6 0x44 mstore                                          // [to, token0, token1, reserve0, reserve1, amount1, amount0]
@@ -308,7 +319,7 @@
       0x64 calldataload 0x04 add calldataload 0x40 add dup1     // [size, retSize, to, token0, token1, reserve0, reserve1, amount1, amount0]
       0x64 dup1                                                 // [destOffset, offset, size, retSize, to, token0, token1, reserve0, reserve1, amount1, amount0]
       calldatacopy                                              // [retSize, to, token0, token1, reserve0, reserve1, amount1, amount0]
-      0x00 dup1 swap2 0x64 add 0x00                             // [argOffset, argSize, retOffset, retSize, to, token0, token1, reserve0, reserve1, amount1, amount0]
+      callvalue dup1 swap2 0x64 add callvalue                             // [argOffset, argSize, retOffset, retSize, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
       dup1 dup6 gas call                                        // [success, to, token0, token1, reserve0, reserve1, amount1, amount0]
       iszero revert_UNISWAPV2CALL_FAILED jumpi                  // [to, token0, token1, reserve0, reserve1, amount1, amount0]
@@ -316,15 +327,15 @@
     afterCallee:                                                // [to, token0, token1, reserve0, reserve1, amount1, amount0]
       GET_BALANCE_OF()                                          // [balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
     
-    dup9 dup7 sub dup2 gt opt0_0 jumpi                          // [balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
-    0x00 opt1Check jump                                         // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
+      dup9 dup7 sub dup2 gt opt0_0 jumpi                          // [balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
+      callvalue opt1Check jump                                         // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
     opt0_0:                                                     // [balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup9 dup7 sub dup2 sub                                    // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
     opt1Check:                                                  // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup9 dup9 sub dup4 gt opt1_0 jumpi                        // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
-      0x00 adjustedCheck jump                                   // [amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
+      callvalue adjustedCheck jump                                   // [amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
     opt1_0:                                                     // [amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
       dup9 dup9 sub dup4 sub                                    // [amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
@@ -334,56 +345,55 @@
       dup2 iszero revert_INSUFFICIENT_INPUT_AMOUNT jumpi        // [amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
     adjustedJump:
-    0x03 dup3 SAFE_MUL()                                        // [rightSide, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
-    0x3e8 dup5 SAFE_MUL() SAFE_SUB()                            // [balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
+      0x03 dup3 SAFE_MUL()                                        // [rightSide, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
+      0x3e8 dup5 SAFE_MUL() SAFE_SUB()                            // [balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
-    0x03 dup3 SAFE_MUL()                                        // [rightSide, balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
-    0x3e8 dup7 SAFE_MUL() SAFE_SUB()                            // [balance1Adjusted, balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
+      0x03 dup3 SAFE_MUL()                                        // [rightSide, balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
+      0x3e8 dup7 SAFE_MUL() SAFE_SUB()                            // [balance1Adjusted, balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
 
 
-    dup2 dup2 SAFE_MUL()                                        // [balAdjBasedK, balance1Adjusted, balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
-    dup12 dup12 0xf4240 
-    SAFE_MUL() SAFE_MUL()                                       // [calK, balAdjBasedK, balance1Adjusted, balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
-    
-    lt iszero revert_K jumpi                                    // [balance1Adjusted, balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
-    pop pop swap7 swap1 swap8                                   // [reserve1, reserve0, balance0, balance1, to, token0, token1, amount1In, amount0In, amount1, amount0]
-    swap3 swap1 swap2 UPDATE()                                  // [to, token0, token1, amount1In, amount0In, amount1, amount0]
+      dup2 dup2 SAFE_MUL()                                        // [balAdjBasedK, balance1Adjusted, balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
+      dup12 dup12 0xf4240 
+      SAFE_MUL() SAFE_MUL()                                       // [calK, balAdjBasedK, balance1Adjusted, balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
+      
+      lt iszero revert_K jumpi                                    // [balance1Adjusted, balance0Adjusted, amount1In, amount0In, balance0, balance1, to, token0, token1, reserve0, reserve1, amount1, amount0]
+      pop pop swap7 swap1 swap8                                   // [reserve1, reserve0, balance0, balance1, to, token0, token1, amount1In, amount0In, amount1, amount0]
+      swap3 swap1 swap2 UPDATE()                                  // [to, token0, token1, amount1In, amount0In, amount1, amount0]
 
-    swap4 0x00 mstore                                           // [token0, token1, amount1In, to, amount1, amount0]
-    swap2 0x20 mstore                                           // [token1, token0, to, amount1, amount0] 
-    swap4 0x40 mstore                                           // [token0, to, amount1, token1] 
-    swap2 0x60 mstore                                           // [to, token0, token1] 
-    caller __EVENT_HASH(Swap)                                   // [swapEventHash, caller, to, token0, token1]
-    0x80 0x00 log3
+      swap4 callvalue mstore                                           // [token0, token1, amount1In, to, amount1, amount0]
+      swap2 0x20 mstore                                           // [token1, token0, to, amount1, amount0] 
+      swap4 0x40 mstore                                           // [token0, to, amount1, token1] 
+      swap2 0x60 mstore                                           // [to, token0, token1] 
+      caller __EVENT_HASH(Swap)                                   // [swapEventHash, caller, to, token0, token1]
+      0x80 callvalue log3
 
-    UNLOCK()
-
-    0x00 0x00 return
+      UNLOCK()
+      stop
 
     revert_UNISWAPV2CALL_FAILED:
          __ERROR(UNISWAPV2CALL_FAILED)
-        0x00 mstore 0x04 0x00 revert
+        callvalue mstore 0x04 callvalue revert
 
     revert_INSUFFICIENT_OUTPUT_AMOUNT:
         __ERROR(INSUFFICIENT_OUTPUT_AMOUNT)
-        0x00 mstore 0x04 0x00 revert
+        callvalue mstore 0x04 callvalue revert
 
         
     revert_INSUFFICIENT_LIQUIDITY:
         __ERROR(INSUFFICIENT_LIQUIDITY)
-        0x00 mstore 0x04 0x00 revert
+        callvalue mstore 0x04 callvalue revert
 
     revert_INVALID_TO:
         __ERROR(INVALID_TO)
-        0x00 mstore 0x04 0x00 revert
+        callvalue mstore 0x04 callvalue revert
 
     revert_INSUFFICIENT_INPUT_AMOUNT:
         __ERROR(INSUFFICIENT_INPUT_AMOUNT)
-        0x00 mstore 0x04 0x00 revert
+        callvalue mstore 0x04 callvalue revert
 
     revert_K:
         __ERROR(INVALID_K)
-        0x00 mstore 0x04 0x00 revert
+        callvalue mstore 0x04 callvalue revert
 }
 
 #define macro SYNC() = takes (0) returns (0) {
@@ -395,160 +405,25 @@
     UPDATE()                                    // []
 
     UNLOCK()
-
-    0x00 0x00 return
+    stop
 }
 
 #define macro TOKEN0() = takes (0) returns (0) {
     [_TOKEN0] sload       
-    0x00 mstore
-    0x20 0x00 return
+    returndatasize mstore
+    0x20 returndatasize return
 }
 
 #define macro TOKEN1() = takes (0) returns (0) {
     [_TOKEN1] sload       
-    0x00 mstore
-    0x20 0x00 return
-}
-
-// Function Dispatching
-#define macro MAIN() = takes (1) returns (1) {
-    // Identify which function is being called.
-    // [func sig]
-    0x00 calldataload 0xE0 shr              // [sig]
-
-
-    // function MINIMUM_LIQUIDITY() pure returns (uint256)
-    dup1 __FUNC_SIG(MINIMUM_LIQUIDITY)  eq MINIMUM_LIQUIDITYJump jumpi
-
-
-    // function burn(address) returns (uint256, uint256)
-    dup1 __FUNC_SIG(burn)  eq burnJump jumpi
-
-
-    // function factory() view returns (address)
-    dup1 __FUNC_SIG(factory)  eq factoryJump jumpi
-
-
-    // function getReserves() view returns (uint112, uint112, uint32)
-    dup1 __FUNC_SIG(getReserves)  eq getReservesJump jumpi
-
-
-    // function initialize(address,address)
-    dup1 __FUNC_SIG(initialize)  eq initializeJump jumpi
-
-
-    // function kLast() view returns (uint256)
-    dup1 __FUNC_SIG(kLast)  eq kLastJump jumpi
-
-
-    // function mint(address) returns (uint256)
-    dup1 __FUNC_SIG(mint)  eq mintJump jumpi
-
-
-    // function price0CumulativeLast() view returns (uint256)
-    dup1 __FUNC_SIG(price0CumulativeLast)  eq price0CumulativeLastJump jumpi
-
-
-    // function price1CumulativeLast() view returns (uint256)
-    dup1 __FUNC_SIG(price1CumulativeLast)  eq price1CumulativeLastJump jumpi
-
-
-    // function skim(address)
-    dup1 __FUNC_SIG(skim)  eq skimJump jumpi
-
-
-    // function swap(uint256,uint256,address,bytes)
-    dup1 __FUNC_SIG(swap)  eq swapJump jumpi
-
-
-    // function sync()
-    dup1 __FUNC_SIG(sync)  eq syncJump jumpi
-
-
-    // function token0() view returns (address)
-    dup1 __FUNC_SIG(token0)  eq token0Jump jumpi
-
-
-    // function token1() view returns (address)
-    dup1 __FUNC_SIG(token1)  eq token1Jump jumpi
-
-    ERC20_MAIN()            // [sig]
-
-    not_found:
-      // Revert if no match is found.
-      0x00 dup1 revert
-    
-
-    // function swap(uint256,uint256,address,bytes) 
-    swapJump:
-      pop
-      SWAP()
-
-    // function getReserves() view returns (uint112, uint112, uint32) 
-    getReservesJump:
-      GET_RESERVES()
-
-    // function token0() view returns (address) 
-    token0Jump:
-      TOKEN0()
-
-    // function initialize(address,address) 
-    initializeJump:
-      INITIALIZE()
-
-    // function price0CumulativeLast() view returns (uint256) 
-    price0CumulativeLastJump:
-      PRICE0_CUMULATIVE_LAST()
-
-    // function price1CumulativeLast() view returns (uint256) 
-    price1CumulativeLastJump:
-      PRICE1_CUMULATIVE_LAST()
-
-    // function mint(address) returns (uint256) 
-    mintJump:
-      MINT()
-
-    // function kLast() view returns (uint256) 
-    kLastJump:
-      K_LAST()
-
-    // function burn(address) returns (uint256, uint256) 
-    burnJump:
-      BURN()
-
-    // function MINIMUM_LIQUIDITY() pure returns (uint256) 
-    MINIMUM_LIQUIDITYJump:
-      MINIMUM_LIQUIDITY()
-
-    // function skim(address) 
-    skimJump:
-      SKIM()
-
-    // function factory() view returns (address) 
-    factoryJump:
-      FACTORY()
-
-    // function token1() view returns (address) 
-    token1Jump:
-      TOKEN1()
-
-    // function sync() 
-    syncJump:
-      SYNC()
-}
-
-
-#define macro CONSTRUCTOR() = takes (0) returns (0) {
-    caller [_FACTORY] sstore
-
-    ERC20_CONSTRUCTOR()
+    returndatasize mstore
+    0x20 returndatasize return
 }
 
 
 
 
-// helpers, internal and private functions
+// HELPERS, INTERNAL AND PRIVATE FUNCTIONS
 
 #define macro _GET_RESERVES() = takes(0) returns(2) {
     [PACKED_RESERVE_INFO] sload             // [packedReserveSlot]
@@ -560,21 +435,24 @@
 }
 
 #define macro GET_BALANCE_OF() = takes(0) returns(2) {
-    __RIGHTPAD(0x70a08231) 0x00 mstore      
+    // returns balance of token0 and token1
+    // safe to assume they both have code deployed to them as adding liquidity for them in this pair wouldn't have been possible otherwise
+
+    __RIGHTPAD(0x70a08231) callvalue mstore      
     address 0x04 mstore                                                                 
-    0x20 0x80 0x24 0x00                                         // [in, insize, out, outsize]
+    0x20 0x80 0x24 callvalue                                         // [in, insize, out, outsize]
     [_TOKEN1] sload gas staticcall          
     iszero balanceOfCallFailed jumpi
     0x80 mload                                                  // [token1Balance]
     
-    0x20 0x80 0x24 0x00                                         // [in, insize, out, outsize, token1Balance]
+    0x20 0x80 0x24 callvalue                                         // [in, insize, out, outsize, token1Balance]
     [_TOKEN0] sload gas staticcall
     iszero balanceOfCallFailed jumpi
     0x80 mload                                                  // [token0Balance, token1Balance]
     GET_BALANCE_OF_continue jump
 
     balanceOfCallFailed:
-        0x00 0x00 revert
+        callvalue callvalue revert
 
     GET_BALANCE_OF_continue:
 }
@@ -583,14 +461,13 @@
 #define macro MINT_FEE() = takes(0) returns(1) {
   // expects 2 stack inputs [reserev0, reserve1]
 
-    __RIGHTPAD(0x017e7e58) 0x00 mstore                              // [reserev0, reserve1]
+    __RIGHTPAD(0x017e7e58) callvalue mstore                              // [reserev0, reserve1]
 
-    0x20 0x80 0x04 0x00                                             // [in, insize, out, outsize, reserev0, reserve1]
+    0x20 0x80 0x04 callvalue                                             // [in, insize, out, outsize, reserev0, reserve1]
     [_FACTORY] sload gas staticcall                                 // [sucess, reserev0, reserve1]
     iszero feeToCallFailed jumpi                                    // [reserev0, reserve1]
     0x80 mload                                                      // [feeTo, reserev0, reserve1]
     dup1 iszero iszero                                              // [feeOn, feeTo, reserev0, reserve1]
-
 
 
     dup1 iszero iszero feeOnCondition jumpi                         // [feeOn, feeTo, reserev0, reserve1]
@@ -598,7 +475,7 @@
     [_K_LAST] sload                                                 // [kLast, feeOn, feeTo, reserev0, reserve1]
     iszero preContinue_kLastIsZero jumpi                            // [feeOn, feeTo, reserev0, reserve1]
 
-    0x00 [_K_LAST] sstore                                           // [feeOn, feeTo, reserev0, reserve1]
+    callvalue [_K_LAST] sstore                                           // [feeOn, feeTo, reserev0, reserve1]
     preContinue_kLastIsZero jump                                    // [feeOn]
 
 
@@ -607,12 +484,11 @@
         iszero preContinue_kLastIsZero jumpi
                                                                     // [kLast, feeOn, feeTo, reserev0, reserve1]
         swap3 swap1 swap4 SAFE_MUL() SQRT()                         // [rootK, kLast, feeOn, feeTo] [rootK, feeTo, kLast, feeOn]
-        swap2 SQRT()  // [rootKLast, feeTo, rootK, feeOn]
-        swap2 swap1  // [feeTo, rootK, rootKLadst, FEEoN]
-        swap3 swap2
-        // swap1 SQRT()                                             // [rootKLast, rootK, feeOn, feeTo]
-        dup1 dup3 gt iszero iszero preContinue_rootKCompare jumpi                  
+        swap2 SQRT()                                                // [rootKLast, feeTo, rootK, feeOn]
+        swap2 swap1                                                 // [feeTo, rootK, rootKLadst, FEEoN]
+        swap3 swap2                                                 // [rootKLast, rootK, feeOn, feeTo]
 
+        dup1 dup3 gt iszero iszero preContinue_rootKCompare jumpi                  
 
         dup1 dup3 sub [TOTAL_SUPPLY_SLOT] sload SAFE_MUL()          // [numerator, rootKLast, rootK, feeOn, feeTo]   
         swap2 0x05 SAFE_MUL() SAFE_ADD()                            // [denominator, numerator, feeOn, feeTo]
@@ -625,26 +501,25 @@
 
 
     feeToCallFailed:
-        0x00 0x00 revert
+        callvalue callvalue revert
 
     preContinue_kLastIsZero:
         swap3 pop pop pop
         MINT_FEE_continue jump
 
     preContinue_rootKCompare:
-        pop pop swap1 pop MINT_FEE_continue jump
+        pop pop swap1 pop 
+        MINT_FEE_continue jump
 
     preContinue_last:
-        pop swap1 pop MINT_FEE_continue jump
+        pop swap1 pop 
+        MINT_FEE_continue jump
 
     preContinue_kLastCompare:
         pop
 
     MINT_FEE_continue:
 }
-
-
-
 
 
 
@@ -685,9 +560,172 @@
       UPDATE_continue jump
       
     overflow:
-      __ERROR(OVERFLOW) 0x00 mstore
-      0x04 0x00 revert
+      __ERROR(OVERFLOW) callvalue mstore
+      0x04 callvalue revert
 
     UPDATE_continue:
       pop pop                                           // []
+}
+
+
+
+// Function Dispatching
+#define macro MAIN() = takes (1) returns (1) {
+    // Identify which function is being called.
+    // [func sig]
+    0x00 calldataload 0xE0 shr
+
+    
+    // pivot0 cut on function kLast() view returns (uint256) 0x7464fc3d
+    __FUNC_SIG(kLast) dup2 lt iszero pivot0 jumpi
+            
+        // pivot00 cut on function initialize(address,address) 0x485cc955
+        __FUNC_SIG(initialize) dup2 lt iszero pivot00 jumpi
+              // function swap(uint256,uint256,address,bytes)
+              dup1 __FUNC_SIG(swap)  eq swapJump   jumpi
+        
+              // function getReserves() view returns (uint112, uint112, uint32)
+              dup1 __FUNC_SIG(getReserves)  eq getReservesJump   jumpi
+        
+              // function token0() view returns (address)
+              dup1 __FUNC_SIG(token0)  eq token0Jump   jumpi
+        
+        
+              not_found jump
+        
+        pivot00:
+              // function initialize(address,address)
+              dup1 __FUNC_SIG(initialize)  eq initializeJump   jumpi
+        
+              // function price0CumulativeLast() view returns (uint256)
+              dup1 __FUNC_SIG(price0CumulativeLast)  eq price0CumulativeLastJump   jumpi
+        
+              // function price1CumulativeLast() view returns (uint256)
+              dup1 __FUNC_SIG(price1CumulativeLast)  eq price1CumulativeLastJump   jumpi
+        
+              // function mint(address) returns (uint256)
+              dup1 __FUNC_SIG(mint)  eq mintJump   jumpi
+        
+        
+              not_found jump
+        
+        
+    
+    pivot0:
+            
+        // pivot01 cut on function skim(address) 0xbc25cf77
+        __FUNC_SIG(skim) dup2 lt iszero pivot01 jumpi
+              // function kLast() view returns (uint256)
+              dup1 __FUNC_SIG(kLast)  eq kLastJump   jumpi
+        
+              // function burn(address) returns (uint256, uint256)
+              dup1 __FUNC_SIG(burn)  eq burnJump   jumpi
+        
+              // function MINIMUM_LIQUIDITY() pure returns (uint256)
+              dup1 __FUNC_SIG(MINIMUM_LIQUIDITY)  eq MINIMUM_LIQUIDITYJump   jumpi
+        
+        
+              not_found jump
+        
+        pivot01:
+              // function skim(address)
+              dup1 __FUNC_SIG(skim)  eq skimJump   jumpi
+        
+              // function factory() view returns (address)
+              dup1 __FUNC_SIG(factory)  eq factoryJump   jumpi
+        
+              // function token1() view returns (address)
+              dup1 __FUNC_SIG(token1)  eq token1Jump   jumpi
+        
+              // function sync()
+              dup1 __FUNC_SIG(sync)  eq syncJump   jumpi
+        
+        
+              not_found jump
+        
+        
+
+    not_found:
+      ERC20_MAIN()            // [sig]
+      // Revert if no match is found.
+      0x00 dup1 revert
+
+    
+
+    // function swap(uint256,uint256,address,bytes) 
+    swapJump:
+      pop
+      SWAP()
+
+    // function getReserves() view returns (uint112, uint112, uint32) 
+    getReservesJump:
+      pop
+      GET_RESERVES()
+
+    // function token0() view returns (address) 
+    token0Jump:
+      pop
+      TOKEN0()
+
+    // function initialize(address,address) 
+    initializeJump:
+      pop
+      INITIALIZE()
+
+    // function price0CumulativeLast() view returns (uint256) 
+    price0CumulativeLastJump:
+      pop
+      PRICE0_CUMULATIVE_LAST()
+
+    // function price1CumulativeLast() view returns (uint256) 
+    price1CumulativeLastJump:
+      pop
+      PRICE1_CUMULATIVE_LAST()
+
+    // function mint(address) returns (uint256) 
+    mintJump:
+      pop
+      MINT()
+
+    // function kLast() view returns (uint256) 
+    kLastJump:
+      pop
+      K_LAST()
+
+    // function burn(address) returns (uint256, uint256) 
+    burnJump:
+      pop
+      BURN()
+
+    // function MINIMUM_LIQUIDITY() pure returns (uint256) 
+    MINIMUM_LIQUIDITYJump:
+      pop
+      MINIMUM_LIQUIDITY()
+
+    // function skim(address) 
+    skimJump:
+      pop
+      SKIM()
+
+    // function factory() view returns (address) 
+    factoryJump:
+      pop
+      FACTORY()
+
+    // function token1() view returns (address) 
+    token1Jump:
+      pop
+      TOKEN1()
+
+    // function sync() 
+    syncJump:
+      pop
+      SYNC()
+}
+
+
+#define macro CONSTRUCTOR() = takes (0) returns (0) {
+    caller [_FACTORY] sstore
+
+    ERC20_CONSTRUCTOR()
 }
