@@ -621,7 +621,7 @@
 #define macro MAIN() = takes (1) returns (1) {
     // Identify which function is being called.
     // [func sig]
-    0x00 calldataload 0xE0 shr
+    returndatasize calldataload 0xE0 shr
 
     
     // pivot0 cut on function kLast() view returns (uint256) 0x7464fc3d
