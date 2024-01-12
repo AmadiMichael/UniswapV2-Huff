@@ -11,7 +11,6 @@ fs_permissions = [
 
 remappings = [
     "forge-std/=lib/forge-std/src/",
-    "foundry-huff/=lib/foundry-huff/src/",
-    "huffmate/=lib/huffmate/src/"
+    "foundry-huff/=lib/foundry-huff/src/"
 ]
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config

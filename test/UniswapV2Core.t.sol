@@ -9,7 +9,7 @@ import "forge-std/Test.sol";
 import {HuffDeployer} from "foundry-huff/HuffDeployer.sol";
 import {IUniswapV2Factory} from "./interface/IUniswapV2Factory.sol";
 import {IUniswapV2Pair} from "./interface/IUniswapV2Pair.sol";
-import {IMintableERC20} from "huffmate/tokens/interfaces/IERC20.sol";
+import {IMintableERC20} from "./interface/IMintableERC20.sol";
 
 contract UniswapV2PairTest is Test {
     uint224 Q112 = 2 ** 112;
