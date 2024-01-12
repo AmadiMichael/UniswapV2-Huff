@@ -6,7 +6,6 @@
 pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
-import {HuffConfig} from "foundry-huff/HuffConfig.sol";
 import {HuffDeployer} from "foundry-huff/HuffDeployer.sol";
 import {IUniswapV2Factory} from "./interface/IUniswapV2Factory.sol";
 import {IUniswapV2Pair} from "./interface/IUniswapV2Pair.sol";
@@ -22,36 +21,24 @@ contract UniswapV2PairTest is Test {
 
     function setUp() public {
         testUser = new TestUser();
-        string memory mock_wrapper = vm.readFile("src/UniswapV2Pair.huff");
-        string memory mintable_wrapper = vm.readFile(
-            "test/mocks/ERC20MintableWrappers.huff"
-        );
+        // string memory mock_wrapper = vm.readFile("UniswapV2Pair");
+        string memory mintable_wrapper = vm.readFile("test/mocks/ERC20MintableWrappers.huff");
 
         // Deploy the Mintable ERC20
-        address mintableTokenAddress = HuffDeployer
-            .config()
-            .with_code(mintable_wrapper)
-            .with_args(bytes.concat(abi.encode(18)))
-            .with_deployer(address(this))
-            .deploy("ERC20");
-        token0 = IMintableERC20(mintableTokenAddress);
+        token0 = IMintableERC20(
+            HuffDeployer.config().with_code(mintable_wrapper).with_args(bytes.concat(abi.encode(18))).with_deployer(
+                address(this)
+            ).deploy("ERC20")
+        );
 
-        mintableTokenAddress = HuffDeployer
-            .config()
-            .with_code(mintable_wrapper)
-            .with_args(bytes.concat(abi.encode(18)))
-            .with_deployer(address(this))
-            .deploy("ERC20");
-
-        token1 = IMintableERC20(mintableTokenAddress);
+        token1 = IMintableERC20(
+            HuffDeployer.config().with_code(mintable_wrapper).with_args(bytes.concat(abi.encode(18))).with_deployer(
+                address(this)
+            ).deploy("ERC20")
+        );
 
         pair = IUniswapV2Pair(
-            HuffDeployer
-                .config()
-                .with_code(mock_wrapper)
-                .with_args(bytes.concat(abi.encode(18)))
-                .with_deployer(address(this))
-                .deploy("ERC20")
+            HuffDeployer.config().with_args(abi.encode(18)).with_deployer(address(this)).deploy("UniswapV2Pair")
         );
 
         pair.initialize(address(token0), address(token1));
@@ -71,57 +58,34 @@ contract UniswapV2PairTest is Test {
         assertEq(pair.token1(), address(token1));
     }
 
-    function assertReserves(
-        uint112 expectedReserve0,
-        uint112 expectedReserve1
-    ) internal {
-        (uint112 reserve0, uint112 reserve1, ) = pair.getReserves();
+    function assertReserves(uint112 expectedReserve0, uint112 expectedReserve1) internal {
+        (uint112 reserve0, uint112 reserve1,) = pair.getReserves();
         assertEq(reserve0, expectedReserve0, "unexpected reserve0");
         assertEq(reserve1, expectedReserve1, "unexpected reserve1");
     }
 
-    function assertCumulativePrices(
-        uint256 expectedPrice0,
-        uint256 expectedPrice1
-    ) internal {
-        assertEq(
-            pair.price0CumulativeLast(),
-            expectedPrice0,
-            "unexpected cumulative price 0"
-        );
-        assertEq(
-            pair.price1CumulativeLast(),
-            expectedPrice1,
-            "unexpected cumulative price 1"
-        );
+    function assertCumulativePrices(uint256 expectedPrice0, uint256 expectedPrice1) internal {
+        assertEq(pair.price0CumulativeLast(), expectedPrice0, "unexpected cumulative price 0");
+        assertEq(pair.price1CumulativeLast(), expectedPrice1, "unexpected cumulative price 1");
     }
 
-    function calculateCurrentPrice()
-        internal
-        view
-        returns (uint256 price0, uint256 price1)
-    {
-        (uint112 reserve0, uint112 reserve1, ) = pair.getReserves();
+    function calculateCurrentPrice() internal view returns (uint256 price0, uint256 price1) {
+        (uint112 reserve0, uint112 reserve1,) = pair.getReserves();
         price0 = reserve0 > 0 ? (reserve1 * uint256(Q112)) / reserve0 : 0;
         price1 = reserve1 > 0 ? (reserve0 * uint256(Q112)) / reserve1 : 0;
     }
 
     function assertBlockTimestampLast(uint32 expected) internal {
-        (, , uint32 blockTimestampLast) = pair.getReserves();
+        (,, uint32 blockTimestampLast) = pair.getReserves();
 
         assertEq(blockTimestampLast, expected, "unexpected blockTimestampLast");
     }
 
-    function encodeError(
-        string memory error
-    ) internal pure returns (bytes memory encoded) {
+    function encodeError(string memory error) internal pure returns (bytes memory encoded) {
         encoded = abi.encodeWithSignature(error);
     }
 
-    function encodeError(
-        string memory error,
-        uint256 a
-    ) internal pure returns (bytes memory encoded) {
+    function encodeError(string memory error, uint256 a) internal pure returns (bytes memory encoded) {
         encoded = abi.encodeWithSignature(error, a);
     }
 
@@ -230,13 +194,7 @@ contract UniswapV2PairTest is Test {
     }
 
     function testBurnUnbalancedDifferentUsers() public {
-        testUser.provideLiquidity(
-            address(pair),
-            address(token0),
-            address(token1),
-            1 ether,
-            1 ether
-        );
+        testUser.provideLiquidity(address(pair), address(token0), address(token1), 1 ether, 1 ether);
 
         assertEq(pair.balanceOf(address(this)), 0);
         assertEq(pair.balanceOf(address(testUser)), 1 ether - 1000);
@@ -264,10 +222,7 @@ contract UniswapV2PairTest is Test {
         assertEq(pair.balanceOf(address(testUser)), 0);
         assertReserves(1500, 1000);
         assertEq(pair.totalSupply(), 1000);
-        assertEq(
-            token0.balanceOf(address(testUser)),
-            10 ether + 0.5 ether - 1500
-        );
+        assertEq(token0.balanceOf(address(testUser)), 10 ether + 0.5 ether - 1500);
         assertEq(token1.balanceOf(address(testUser)), 10 ether - 1000);
     }
 
@@ -294,10 +249,7 @@ contract UniswapV2PairTest is Test {
         pair.mint(address(this));
 
         bytes32 val = vm.load(address(pair), bytes32(uint256(9)));
-        assertEq(
-            val,
-            hex"000000010000000000001bc16d674ec800000000000000000de0b6b3a7640000"
-        );
+        assertEq(val, hex"000000010000000000001bc16d674ec800000000000000000de0b6b3a7640000");
     }
 
     function testSwapBasicScenario() public {
@@ -309,16 +261,8 @@ contract UniswapV2PairTest is Test {
         token0.transfer(address(pair), 0.1 ether);
         pair.swap(0, amountOut, address(this), "");
 
-        assertEq(
-            token0.balanceOf(address(this)),
-            10 ether - 1 ether - 0.1 ether,
-            "unexpected token0 balance"
-        );
-        assertEq(
-            token1.balanceOf(address(this)),
-            10 ether - 2 ether + amountOut,
-            "unexpected token1 balance"
-        );
+        assertEq(token0.balanceOf(address(this)), 10 ether - 1 ether - 0.1 ether, "unexpected token0 balance");
+        assertEq(token1.balanceOf(address(this)), 10 ether - 2 ether + amountOut, "unexpected token1 balance");
         assertReserves(1 ether + 0.1 ether, uint112(2 ether - amountOut));
     }
 
@@ -330,16 +274,8 @@ contract UniswapV2PairTest is Test {
         token1.transfer(address(pair), 0.2 ether);
         pair.swap(0.09 ether, 0, address(this), "");
 
-        assertEq(
-            token0.balanceOf(address(this)),
-            10 ether - 1 ether + 0.09 ether,
-            "unexpected token0 balance"
-        );
-        assertEq(
-            token1.balanceOf(address(this)),
-            10 ether - 2 ether - 0.2 ether,
-            "unexpected token1 balance"
-        );
+        assertEq(token0.balanceOf(address(this)), 10 ether - 1 ether + 0.09 ether, "unexpected token0 balance");
+        assertEq(token1.balanceOf(address(this)), 10 ether - 2 ether - 0.2 ether, "unexpected token1 balance");
         assertReserves(1 ether - 0.09 ether, 2 ether + 0.2 ether);
     }
 
@@ -352,16 +288,8 @@ contract UniswapV2PairTest is Test {
         token1.transfer(address(pair), 0.2 ether);
         pair.swap(0.09 ether, 0.18 ether, address(this), "");
 
-        assertEq(
-            token0.balanceOf(address(this)),
-            10 ether - 1 ether - 0.01 ether,
-            "unexpected token0 balance"
-        );
-        assertEq(
-            token1.balanceOf(address(this)),
-            10 ether - 2 ether - 0.02 ether,
-            "unexpected token1 balance"
-        );
+        assertEq(token0.balanceOf(address(this)), 10 ether - 1 ether - 0.01 ether, "unexpected token0 balance");
+        assertEq(token1.balanceOf(address(this)), 10 ether - 2 ether - 0.02 ether, "unexpected token1 balance");
         assertReserves(1 ether + 0.01 ether, 2 ether + 0.02 ether);
     }
 
@@ -394,16 +322,8 @@ contract UniswapV2PairTest is Test {
         token0.transfer(address(pair), 0.1 ether);
         pair.swap(0, 0.09 ether, address(this), "");
 
-        assertEq(
-            token0.balanceOf(address(this)),
-            10 ether - 1 ether - 0.1 ether,
-            "unexpected token0 balance"
-        );
-        assertEq(
-            token1.balanceOf(address(this)),
-            10 ether - 2 ether + 0.09 ether,
-            "unexpected token1 balance"
-        );
+        assertEq(token0.balanceOf(address(this)), 10 ether - 1 ether - 0.1 ether, "unexpected token0 balance");
+        assertEq(token1.balanceOf(address(this)), 10 ether - 2 ether + 0.09 ether, "unexpected token1 balance");
         assertReserves(1 ether + 0.1 ether, 2 ether - 0.09 ether);
     }
 
@@ -417,16 +337,8 @@ contract UniswapV2PairTest is Test {
         vm.expectRevert(encodeError("INVALID_K()"));
         pair.swap(0, 0.36 ether, address(this), "");
 
-        assertEq(
-            token0.balanceOf(address(this)),
-            10 ether - 1 ether - 0.1 ether,
-            "unexpected token0 balance"
-        );
-        assertEq(
-            token1.balanceOf(address(this)),
-            10 ether - 2 ether,
-            "unexpected token1 balance"
-        );
+        assertEq(token0.balanceOf(address(this)), 10 ether - 1 ether - 0.1 ether, "unexpected token0 balance");
+        assertEq(token1.balanceOf(address(this)), 10 ether - 2 ether, "unexpected token1 balance");
         assertReserves(1 ether, 2 ether);
     }
 
@@ -447,10 +359,7 @@ contract UniswapV2PairTest is Test {
         token1.transfer(address(pair), 1 ether);
         pair.mint(address(this));
 
-        (
-            uint256 initialPrice0,
-            uint256 initialPrice1
-        ) = calculateCurrentPrice();
+        (uint256 initialPrice0, uint256 initialPrice1) = calculateCurrentPrice();
 
         // 0 seconds passed.
         pair.sync();
@@ -488,28 +397,19 @@ contract UniswapV2PairTest is Test {
         vm.warp(4);
         pair.sync();
         assertBlockTimestampLast(4);
-        assertCumulativePrices(
-            initialPrice0 * 3 + newPrice0,
-            initialPrice1 * 3 + newPrice1
-        );
+        assertCumulativePrices(initialPrice0 * 3 + newPrice0, initialPrice1 * 3 + newPrice1);
 
         // 2 seconds passed.
         vm.warp(5);
         pair.sync();
         assertBlockTimestampLast(5);
-        assertCumulativePrices(
-            initialPrice0 * 3 + newPrice0 * 2,
-            initialPrice1 * 3 + newPrice1 * 2
-        );
+        assertCumulativePrices(initialPrice0 * 3 + newPrice0 * 2, initialPrice1 * 3 + newPrice1 * 2);
 
         // 3 seconds passed.
         vm.warp(6);
         pair.sync();
         assertBlockTimestampLast(6);
-        assertCumulativePrices(
-            initialPrice0 * 3 + newPrice0 * 3,
-            initialPrice1 * 3 + newPrice1 * 3
-        );
+        assertCumulativePrices(initialPrice0 * 3 + newPrice0 * 3, initialPrice1 * 3 + newPrice1 * 3);
     }
 
     function testFlashloan() public {
@@ -518,10 +418,7 @@ contract UniswapV2PairTest is Test {
         pair.mint(address(this));
 
         uint256 flashloanAmount = 0.1 ether;
-        uint256 flashloanFee = (flashloanAmount * 1000) /
-            997 -
-            flashloanAmount +
-            1;
+        uint256 flashloanFee = (flashloanAmount * 1000) / 997 - flashloanAmount + 1;
 
         Flashloaner fl = new Flashloaner();
 
@@ -553,9 +450,7 @@ contract TestUser {
     }
 
     function removeLiquidity(address pairAddress_) public {
-        uint256 liquidity = IMintableERC20(pairAddress_).balanceOf(
-            address(this)
-        );
+        uint256 liquidity = IMintableERC20(pairAddress_).balanceOf(address(this));
         IMintableERC20(pairAddress_).transfer(pairAddress_, liquidity);
         IUniswapV2Pair(pairAddress_).burn(address(this));
     }
@@ -566,12 +461,7 @@ contract Flashloaner {
 
     uint256 expectedLoanAmount;
 
-    function flashloan(
-        address pairAddress,
-        uint256 amount0Out,
-        uint256 amount1Out,
-        address tokenAddress
-    ) public {
+    function flashloan(address pairAddress, uint256 amount0Out, uint256 amount1Out, address tokenAddress) public {
         if (amount0Out > 0) {
             expectedLoanAmount = amount0Out;
         }
@@ -579,18 +469,22 @@ contract Flashloaner {
             expectedLoanAmount = amount1Out;
         }
 
-        IUniswapV2Pair(pairAddress).swap(
-            amount0Out,
-            amount1Out,
-            address(this),
-            abi.encode(tokenAddress)
-        );
+        IUniswapV2Pair(pairAddress).swap(amount0Out, amount1Out, address(this), abi.encode(tokenAddress));
     }
 
     function uniswapV2Call(
-        address /** sender */,
-        uint256 /** amount0Out */,
-        uint256 /** amount1Out */,
+        address,
+        /**
+         * sender
+         */
+        uint256,
+        /**
+         * amount0Out
+         */
+        uint256,
+        /**
+         * amount1Out
+         */
         bytes calldata data
     ) public {
         address tokenAddress = abi.decode(data, (address));

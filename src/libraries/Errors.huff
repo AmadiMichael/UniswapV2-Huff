@@ -1,0 +1,17 @@
+// Solidity Panic Codes
+#define constant ARITHMETIC_OVERFLOW = 0x11
+#define constant DIVIDE_BY_ZERO = 0x12
+
+#define error Panic(uint256)
+
+#define macro PANIC() = takes (1) returns (0) {
+    // takes:       // [panic_code]
+    __ERROR(Panic)  // [panic_sig, panic_code]
+    0x00            // [panic_sig_offset, panic_sig, panic_code]
+    mstore          // [panic_code]
+    0x04            // [panic_code_offset, panic_code]
+    mstore          // []
+    0x24            // [revert_size]
+    0x00            // [revert_offset, revert_size]
+    revert          // []
+}

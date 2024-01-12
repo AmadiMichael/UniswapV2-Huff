@@ -9,14 +9,12 @@
 /// @notice `callvalue` is used in cases where an external call that returns data has been made earlier which will make `returndatasize` return a non-zero value
 /// @notice `callvalue` is safe to use here because no function here is payable which means `callvalue` will always push 0x00 to the stack
 
-#include "huffmate/auth/NonPayable.huff"
-#include "huffmate/utils/SafeTransferLib.huff"
-#include "huffmate/utils/Calls.huff"
-#include "huffmate/math/SafeMath.huff"
-#include "huffmate/math/Math.huff"
 #include "./libraries/UQ112x112.huff"
 #include "./libraries/ReentrancyGuard.huff"
-
+#include "./libraries/SafeMath.huff"
+#include "./libraries/SafeTransfer.huff"
+#include "./libraries/Errors.huff"
+#include "./ERC20.huff"
 
 
 // Define Interface
@@ -47,7 +45,6 @@
 
 
 // constants
-
 #define constant OneToPower6 = 0xf4240
 #define constant __UINT112_MAX = 0xffffffffffffffffffffffffffff
 #define constant _MINIMUM_LIQUIDITY = 0x3e8
@@ -618,7 +615,7 @@
 
 
 // Function Dispatching
-#define macro MAIN() = takes (1) returns (1) {
+#define macro MAIN() = takes(1) returns(1) {
     // Identify which function is being called.
     // [func sig]
     0x00 calldataload 0xE0 shr
@@ -702,77 +699,63 @@
 
     // function swap(uint256,uint256,address,bytes) 
     swapJump:
-      pop
       SWAP()
 
     // function getReserves() view returns (uint112, uint112, uint32) 
     getReservesJump:
-      pop
       GET_RESERVES()
 
     // function token0() view returns (address) 
     token0Jump:
-      pop
       TOKEN0()
 
     // function initialize(address,address) 
     initializeJump:
-      pop
       INITIALIZE()
 
     // function price0CumulativeLast() view returns (uint256) 
     price0CumulativeLastJump:
-      pop
       PRICE0_CUMULATIVE_LAST()
 
     // function price1CumulativeLast() view returns (uint256) 
     price1CumulativeLastJump:
-      pop
       PRICE1_CUMULATIVE_LAST()
 
     // function mint(address) returns (uint256) 
     mintJump:
-      pop
       MINT()
 
     // function kLast() view returns (uint256) 
     kLastJump:
-      pop
       K_LAST()
 
     // function burn(address) returns (uint256, uint256) 
     burnJump:
-      pop
       BURN()
 
     // function MINIMUM_LIQUIDITY() pure returns (uint256) 
     MINIMUM_LIQUIDITYJump:
-      pop
       MINIMUM_LIQUIDITY()
 
     // function skim(address) 
     skimJump:
-      pop
       SKIM()
 
     // function factory() view returns (address) 
     factoryJump:
-      pop
       FACTORY()
 
     // function token1() view returns (address) 
     token1Jump:
-      pop
       TOKEN1()
 
     // function sync() 
     syncJump:
-      pop
       SYNC()
 }
 
 
-#define macro CONSTRUCTOR() = takes (0) returns (0) {
+#define macro CONSTRUCTOR() = takes(0) returns(0) {
     caller [_FACTORY] sstore
 
     ERC20_CONSTRUCTOR()

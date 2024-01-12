@@ -1,0 +1,34 @@
+/// @notice Safely transfers an `amount` to an address `to` for the provided `token`
+#define macro SAFE_TRANSFER(mem_ptr) = takes (3) {
+    // Input stack:            [to, amount, token]
+    // Output stack:           []
+
+    __RIGHTPAD(0xa9059cbb)  // [transfer_selector, to, amount, token]
+    <mem_ptr>               // [mem_ptr, transfer_selector, to, amount, token]
+    mstore                  // [to, amount, token]
+
+    <mem_ptr> 0x04 add      // [mem_ptr + 0x04, to, amount, token]
+    mstore                  // [amount, token]
+    <mem_ptr> 0x24 add      // [mem_ptr + 0x24, amount, token]
+    mstore
+
+    <mem_ptr> 0x44          // [0x44, mem_ptr, token]
+    dup2 0x00               // [0x00, mem_ptr, 0x44, mem_ptr, token]
+    0x20 swap5              // [token, 0x00, mem_ptr, 0x44, mem_ptr, 0x20]
+    gas call                // [success]
+
+    returndatasize          // [returndatasize, success]
+    iszero                  // [returndatasize == 0, success]
+    <mem_ptr>               // [offset, returndatasize == 0, success]
+    mload                   // [data, returndatasize == 0, success]
+    0x01 eq                 // [data == 0x01, returndatasize == 0, success]
+    or                      // [data == 0x01 | returndatasize == 0, success]
+
+    and                     // [success & (data == 0x01 | returndatasize == 0)]
+    success jumpi           // []
+
+    0x90b8ec18 0x00 mstore
+    0x04 0x1c revert
+
+    success:
+}

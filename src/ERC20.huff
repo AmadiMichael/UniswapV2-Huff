@@ -6,9 +6,8 @@
 /// @notice Adapted from Solmate (https://github.com/transmissions11/solmate/blob/main/src/tokens/ERC20.sol)
 
 // Imports
-#include "huffmate/utils/Errors.huff"
-#include "huffmate/auth/NonPayable.huff"
-#include "huffmate/data-structures/Hashmap.huff"
+#include "./libraries/Hashmap.huff"
+
 
 // Interface
 #define function allowance(address,address) view returns (uint256)
@@ -58,6 +57,43 @@
 #define constant UINT_256_MAX = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 #define constant ERROR_SIG = 0x08c379a000000000000000000000000000000000000000000000000000000000
 #define constant ZERO_ADDRESS = 0x0000000000000000000000000000000000000000
+
+
+
+#define macro REQUIRE() = takes (3) returns (0) {
+    // takes:       // [condition, message_length, message]
+    do_not_throw    // [do_not_throw_jumpdest, condition, message_length, message]
+    jumpi           // [message_length, message]
+    __ERROR(Error)  // [error_sig, , message_length, message]
+    0x00            // [mem_ptr, error_sig, message_length, message]
+    mstore          // [message_length, message]
+    0x20            // [message_offset, message_length, message]
+    0x04            // [message_offset_ptr, message_offset, message_length, message]
+    mstore          // [message_length, message]
+    0x24            // [message_length_ptr, message_length, message]
+    mstore          // [message]
+    0x44            // [message_ptr, message]
+    mstore          // []
+    0x80            // [size]
+    0x00            // [offset, size]
+    revert          // []
+    do_not_throw:   // [message_length, message]
+        pop         // [message]
+        pop         // []
+}
+
+// "NON_PAYABLE" Revert Message String
+#define constant NON_PAYABLE_ERROR = 0xb4e4f4e5f50415941424c45000000000000000000000000000000000000000000
+#define constant NON_PAYABLE_LENGTH = 0x0b
+
+/// @notice Reverts if the call has a non-zero value
+/// @notice Reverts with message "NON_PAYABLE"
+#define macro NON_PAYABLE() = takes (0) returns (0) {
+    [NON_PAYABLE_ERROR]      // ["NON_PAYABLE"]
+    [NON_PAYABLE_LENGTH]     // [11 (length), "NON_PAYABLE"]
+    callvalue iszero         // [msg.value == 0, 11 (length), "NON_PAYABLE"]
+    REQUIRE()                // []
+}
 
 /// @notice Constructor
 /// @notice Sets the initial domain separator and chain ID
@@ -228,23 +264,23 @@
     [BALANCE_SLOT] STORE_ELEMENT_FROM_KEYS(0x00)        // [value, from, to]
 }
 
-/// @notice Approve
-/// @notice Approves an address to spend an amount of tokens on the caller's behalf
-#define macro APPROVE() = takes (0) returns (0) {
-    0x24 calldataload                           // [value]
-    dup1 0x00 mstore                            // [value]
-    0x04 calldataload                           // [to, value]
-    caller                                      // [from, to, value]
+// /// @notice Approve
+// /// @notice Approves an address to spend an amount of tokens on the caller's behalf
+// #define macro APPROVE() = takes (0) returns (0) {
+//     0x24 calldataload                           // [value]
+//     dup1 0x00 mstore                            // [value]
+//     0x04 calldataload                           // [to, value]
+//     caller                                      // [from, to, value]
 
-    // Emit the approval event.
-    dup2 dup2                                   // [from, to, from, to, value]
-    __EVENT_HASH(APPROVAL_EVENT_SIGNATURE)      // [sig, from, to, from, to, value]
-    0x20 0x00                                   // [0, 32, sig, from, to, from, to, value]
-    log3                                        // [from, to, value]
+//     // Emit the approval event.
+//     dup2 dup2                                   // [from, to, from, to, value]
+//     __EVENT_HASH(APPROVAL_EVENT_SIGNATURE)      // [sig, from, to, from, to, value]
+//     0x20 0x00                                   // [0, 32, sig, from, to, from, to, value]
+//     log3                                        // [from, to, value]
 
-    // Store the value at slot = keccak256(from . to)
-    STORE_ELEMENT_FROM_KEYS(0x00)
-}
+//     // Store the value at slot = keccak256(from . to)
+//     STORE_ELEMENT_FROM_KEYS(0x00)
+// }
 
 /// @notice Domain Separator
 /// @notice Returns the EIP-712 domain separator
